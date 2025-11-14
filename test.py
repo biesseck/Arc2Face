@@ -7,6 +7,8 @@ from diffusers import (
 
 from arc2face import CLIPTextModelWrapper, project_face_embs
 
+import os
+import sys
 import torch
 from insightface.app import FaceAnalysis
 from PIL import Image
@@ -46,7 +48,8 @@ pipeline = pipeline.to('cuda')
 app = FaceAnalysis(name='antelopev2', root='./', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 app.prepare(ctx_id=0, det_size=(640, 640))
 
-img = np.array(Image.open('assets/examples/joacquin.png'))[:,:,::-1]
+path_input_img = 'assets/examples/joacquin.png'
+img = np.array(Image.open(path_input_img))[:,:,::-1]
 
 faces = app.get(img)
 faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
@@ -58,5 +61,13 @@ id_emb = project_face_embs(pipeline, id_emb)    # pass through the encoder
 
 # Generate images:
 num_images = 4
+print(f'Generating {num_images} new images...')
 images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=num_images).images
-print('images:', images)
+output_folder = os.path.splitext(path_input_img)[0]
+os.makedirs(output_folder, exist_ok=True)
+for i, img in enumerate(images):
+    output_img_name = os.path.splitext(os.path.basename(path_input_img))[0]
+    path_output_img = os.path.join(output_folder, f"{output_img_name}_output_{i}.png")
+    print(f"Saving output img: \'{path_output_img}\'")
+    img.save(path_output_img)
+# print('images:', images)
