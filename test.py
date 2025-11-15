@@ -13,6 +13,15 @@ import torch
 from insightface.app import FaceAnalysis
 from PIL import Image
 import numpy as np
+import argparse
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--path-input", type=str, default="assets/examples/joacquin.png")
+args = parser.parse_args()
+
+assert os.path.isfile(args.path_input), f"Error: file not found \'{args.path_input}\'"
+
 
 # Arc2Face is built upon SD1.5
 # The repo below can be used instead of the now deprecated 'runwayml/stable-diffusion-v1-5'
@@ -48,26 +57,27 @@ pipeline = pipeline.to('cuda')
 app = FaceAnalysis(name='antelopev2', root='./', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 app.prepare(ctx_id=0, det_size=(640, 640))
 
-path_input_img = 'assets/examples/joacquin.png'
-img = np.array(Image.open(path_input_img))[:,:,::-1]
+img = np.array(Image.open(args.path_input))[:,:,::-1]
 
-faces = app.get(img)
-faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
-id_emb = torch.tensor(faces['embedding'], dtype=torch.float16)[None].cuda()
-id_emb = id_emb/torch.norm(id_emb, dim=1, keepdim=True)   # normalize embedding
-id_emb = project_face_embs(pipeline, id_emb)    # pass through the encoder
+faces = app.get(img)   # detect face
 
+if len(faces) == 0:   # no face detected
+    raise Exception(f'No face detected in image: \'{args.path_input}\'')
+else:
+    faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
+    id_emb = torch.tensor(faces['embedding'], dtype=torch.float16)[None].cuda()
+    id_emb = id_emb/torch.norm(id_emb, dim=1, keepdim=True)   # normalize embedding
+    id_emb = project_face_embs(pipeline, id_emb)    # pass through the encoder
 
-
-# Generate images:
-num_images = 4
-print(f'Generating {num_images} new images...')
-images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=num_images).images
-output_folder = os.path.splitext(path_input_img)[0]
-os.makedirs(output_folder, exist_ok=True)
-for i, img in enumerate(images):
-    output_img_name = os.path.splitext(os.path.basename(path_input_img))[0]
-    path_output_img = os.path.join(output_folder, f"{output_img_name}_output_{i}.png")
-    print(f"Saving output img: \'{path_output_img}\'")
-    img.save(path_output_img)
-# print('images:', images)
+    # Generate images:
+    num_images = 4
+    print(f'Generating {num_images} new images...')
+    images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=num_images).images
+    # print('images:', images)
+    output_folder = os.path.splitext(args.path_input)[0]
+    os.makedirs(output_folder, exist_ok=True)
+    for i, img in enumerate(images):
+        output_img_name = os.path.splitext(os.path.basename(args.path_input))[0]
+        path_output_img = os.path.join(output_folder, f"{output_img_name}_output_{i}.png")
+        print(f"Saving output img: \'{path_output_img}\'")
+        img.save(path_output_img)
