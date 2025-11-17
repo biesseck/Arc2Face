@@ -1,6 +1,8 @@
 #### REQUIREMENTS:
  - Python 3.10
- - CUDA 12.8
+ - CUDA 11.7
+ - cuDNN 8
+ - pytorch 2.0.1
 
 
 #### 1. Clone repository
