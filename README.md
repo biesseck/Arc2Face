@@ -1,3 +1,71 @@
+#### REQUIREMENTS:
+ - Python 3.10
+ - CUDA 12.8
+
+
+#### 1. Clone repository
+```
+git clone https://github.com/biesseck/Arc2Face.git
+cd Arc2Face
+```
+
+
+#### 2. Create env and install dependencies
+```
+ENV_NAME=arc2face_py310
+conda create --name $ENV_NAME python=3.10 --yes
+conda activate $ENV_NAME
+pip install -r requirements_bjgbiesseck.txt
+
+```
+
+
+#### 3. Download models
+```
+# python
+
+from huggingface_hub import hf_hub_download
+hf_hub_download(repo_id="FoivosPar/Arc2Face", filename="arc2face/config.json", local_dir="./models")
+hf_hub_download(repo_id="FoivosPar/Arc2Face", filename="arc2face/diffusion_pytorch_model.safetensors", local_dir="./models")
+hf_hub_download(repo_id="FoivosPar/Arc2Face", filename="encoder/config.json", local_dir="./models")
+hf_hub_download(repo_id="FoivosPar/Arc2Face", filename="encoder/pytorch_model.bin", local_dir="./models")
+hf_hub_download(repo_id="FoivosPar/Arc2Face", filename="arcface.onnx", local_dir="./models/antelopev2")
+
+# exit()
+```
+
+```
+cd models
+gdown 18wEUfMNohBJ4K3Ly5wpTejPfDzp-8fI8    # download 'antelopev2.zip - ResNet100@Glint360K' (https://github.com/deepinsight/insightface/tree/master/python-package#model-zoo)
+unzip antelopev2.zip
+rm antelopev2/glintr100.onnx
+cd ..
+```
+
+
+#### 4. Run `test.py`
+```
+python test.py --path-input assets/examples/joacquin.png
+
+# Output:
+#
+# Generating 4 new images...
+# 100%|█████████████████████████████████████ 25/25 [00:04<00:00,  5.60it/s]
+# Saving output img: 'assets/examples/joacquin/joacquin_output_0.png'
+# Saving output img: 'assets/examples/joacquin/joacquin_output_1.png'
+# Saving output img: 'assets/examples/joacquin/joacquin_output_2.png'
+# Saving output img: 'assets/examples/joacquin/joacquin_output_3.png'
+```
+
+---
+
+<br><br><br><br><br><br>
+
+
+
+
+
+
 <div align="center">
 
 ## 🚀 NEW (2025): ID-Consistent, Precise Expression Generation with Blendshape-Guided Diffusion
