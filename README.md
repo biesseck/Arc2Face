@@ -36,7 +36,7 @@ hf_hub_download(repo_id="FoivosPar/Arc2Face", filename="arcface.onnx", local_dir
 
 ```
 cd models
-gdown 18wEUfMNohBJ4K3Ly5wpTejPfDzp-8fI8    # download 'antelopev2.zip - ResNet100@Glint360K' (https://github.com/deepinsight/insightface/tree/master/python-package#model-zoo)
+gdown 18wEUfMNohBJ4K3Ly5wpTejPfDzp-8fI8    # download "antelopev2.zip-ResNet100@Glint360K" from "https://github.com/deepinsight/insightface/tree/master/python-package#model-zoo"
 unzip antelopev2.zip
 rm antelopev2/glintr100.onnx
 cd ..
