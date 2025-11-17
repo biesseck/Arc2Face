@@ -71,13 +71,13 @@ else:
 
     # Generate images:
     num_images = 4
-    print(f'Generating {num_images} new images...')
+    print(f'Generating {num_images} new samples...')
     images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=num_images).images
     # print('images:', images)
-    output_folder = os.path.splitext(args.path_input)[0]
+    output_folder = f"{os.path.splitext(args.path_input)[0]}_new_samples"
     os.makedirs(output_folder, exist_ok=True)
     for i, img in enumerate(images):
         output_img_name = os.path.splitext(os.path.basename(args.path_input))[0]
-        path_output_img = os.path.join(output_folder, f"{output_img_name}_output_{i}.png")
-        print(f"Saving output img: \'{path_output_img}\'")
+        path_output_img = os.path.join(output_folder, f"{output_img_name}_newSample_{i}.png")
+        print(f"Saving new sample img: \'{path_output_img}\'")
         img.save(path_output_img)
