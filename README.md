@@ -47,14 +47,15 @@ cd ..
 ```
 python test.py --path-input assets/examples/joacquin.png
 
-# Output:
-#
-# Generating 4 new images...
-# 100%|█████████████████████████████████████ 25/25 [00:04<00:00,  5.60it/s]
-# Saving output img: 'assets/examples/joacquin/joacquin_output_0.png'
-# Saving output img: 'assets/examples/joacquin/joacquin_output_1.png'
-# Saving output img: 'assets/examples/joacquin/joacquin_output_2.png'
-# Saving output img: 'assets/examples/joacquin/joacquin_output_3.png'
+Output:
+-------------------
+Generating 4 new images...
+100%|█████████████████████████████████████ 25/25 [00:04<00:00,  5.60it/s]
+Saving output img: 'assets/examples/joacquin/joacquin_output_0.png'
+Saving output img: 'assets/examples/joacquin/joacquin_output_1.png'
+Saving output img: 'assets/examples/joacquin/joacquin_output_2.png'
+Saving output img: 'assets/examples/joacquin/joacquin_output_3.png'
+-------------------
 ```
 
 ---
