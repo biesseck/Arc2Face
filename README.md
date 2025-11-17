@@ -47,7 +47,7 @@ cd ..
 
 #### 4. Run `test.py`
 ```
-python test.py --path-input assets/examples/joacquin.png
+python test.py --path-input assets/examples/joacquin.png --num-samples 4
 
 Output:
 -------------------

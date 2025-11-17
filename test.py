@@ -18,6 +18,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--path-input", type=str, default="assets/examples/joacquin.png")
+parser.add_argument("--num-samples", type=int, default=4)
 args = parser.parse_args()
 
 assert os.path.isfile(args.path_input), f"Error: file not found \'{args.path_input}\'"
@@ -70,11 +71,10 @@ else:
     id_emb = project_face_embs(pipeline, id_emb)    # pass through the encoder
 
     # Generate images:
-    num_images = 4
-    print(f'Generating {num_images} new samples...')
-    images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=num_images).images
+    print(f'Generating {args.num_samples} new samples...')
+    images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples).images
     # print('images:', images)
-    output_folder = f"{os.path.splitext(args.path_input)[0]}_new_samples"
+    output_folder = f"{os.path.splitext(args.path_input)[0]}_newSamples"
     os.makedirs(output_folder, exist_ok=True)
     for i, img in enumerate(images):
         output_img_name = os.path.splitext(os.path.basename(args.path_input))[0]
