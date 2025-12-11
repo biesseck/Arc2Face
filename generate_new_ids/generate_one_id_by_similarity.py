@@ -55,6 +55,35 @@ def get_all_files_in_path(folder_path, file_extension=['.jpg','.jpeg','.png', '.
     return file_list
 
 
+def get_arc2face_model():
+    base_model = 'stable-diffusion-v1-5/stable-diffusion-v1-5'
+    encoder = CLIPTextModelWrapper.from_pretrained(
+        '../models', subfolder="encoder", torch_dtype=torch.float16
+    )
+
+    unet = UNet2DConditionModel.from_pretrained(
+        '../models', subfolder="arc2face", torch_dtype=torch.float16
+    )
+
+    pipeline = StableDiffusionPipeline.from_pretrained(
+        base_model,
+        text_encoder=encoder,
+        unet=unet,
+        torch_dtype=torch.float16,
+        safety_checker=None
+    )
+
+    pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
+    pipeline = pipeline.to('cuda')
+    return pipeline
+
+
+def get_face_recognition_model():
+    fr_model = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    fr_model.prepare(ctx_id=0, det_size=(640, 640))
+    return fr_model
+
+
 def get_random_float(min_max_list):
     if len(min_max_list) == 1:
         min_max_list.append(min_max_list[0])
@@ -126,36 +155,8 @@ if __name__ == '__main__':
     args = parse_arguments()
     assert os.path.isfile(args.path_input) or os.path.isdir(args.path_input), f"Error: no such file or dir \'{args.path_input}\'"
 
-    # Arc2Face is built upon SD1.5
-    # The repo below can be used instead of the now deprecated 'runwayml/stable-diffusion-v1-5'
-    base_model = 'stable-diffusion-v1-5/stable-diffusion-v1-5'
-
-    encoder = CLIPTextModelWrapper.from_pretrained(
-        '../models', subfolder="encoder", torch_dtype=torch.float16
-    )
-
-    unet = UNet2DConditionModel.from_pretrained(
-        '../models', subfolder="arc2face", torch_dtype=torch.float16
-    )
-
-    pipeline = StableDiffusionPipeline.from_pretrained(
-        base_model,
-        text_encoder=encoder,
-        unet=unet,
-        torch_dtype=torch.float16,
-        safety_checker=None
-    )
-
-    # You can use any SD-compatible schedulers and steps, just like with Stable Diffusion.
-    # By default, we use DPMSolverMultistepScheduler with 25 steps, which produces very good
-    # results in just a few seconds.
-    pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
-    pipeline = pipeline.to('cuda')
-
-    app = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-    app.prepare(ctx_id=0, det_size=(640, 640))
-
-
+    pipeline = get_arc2face_model()
+    fr_model = get_face_recognition_model()
 
     if os.path.isfile(args.path_input):
         if args.path_input.endswith('.npy') or args.path_input.endswith('.pt'):
@@ -166,12 +167,7 @@ if __name__ == '__main__':
                 # src_id_emb = 
                 pass
             else:
-                # Pick an image and extract the ID-embedding:
-                # app = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-                # app.prepare(ctx_id=0, det_size=(640, 640))
-                faces = app.get(img)   # detect face
-                # print('faces:', faces)
-                # sys.exit(0)
+                faces = fr_model.get(img)   # detect face
                 if len(faces) == 0:   # no face detected
                     raise Exception(f'No face detected in image: \'{args.path_input}\'')
                 faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
@@ -189,20 +185,12 @@ if __name__ == '__main__':
                     # src_id_emb = 
                     pass
                 else:
-                    # Pick an image and extract the ID-embedding:
-                    # app = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-                    # app.prepare(ctx_id=0, det_size=(640, 640))
-                    faces = app.get(img)   # detect face
-                    # print('faces:', faces)
-                    # sys.exit(0)
+                    faces = fr_model.get(img)   # detect face
                     if len(faces) == 0:   # no face detected
                         raise Exception(f'No face detected in image: \'{path_file}\'')
                     faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
                     src_id_embedds[idx_path] = faces['embedding']
         src_id_emb = src_id_embedds.mean(axis=0)
-        # print('src_id_embedds.shape:', src_id_embedds.shape)
-        # print('src_id_emb.shape:', src_id_emb.shape)
-        # sys.exit(0)
 
     src_id_emb = torch.tensor(src_id_emb, dtype=torch.float16)[None].cuda()
 
@@ -211,13 +199,13 @@ if __name__ == '__main__':
 
     # Generate new identity embedding
     new_id_emb = rotate_embedding_by_cosine_similarity(src_id_emb, similarity)
-
     new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
-    new_id_emb = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
 
     # Generate images:
     print(f'Generating {args.num_samples_by_id} new images...')
+    new_id_emb = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
     images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
+    
     if os.path.isfile(args.path_input):
         output_folder = f"{os.path.splitext(args.path_input)[0]}_newId_sim={similarity}"
     elif os.path.isdir(args.path_input):
