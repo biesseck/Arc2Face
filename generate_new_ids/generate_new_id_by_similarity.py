@@ -8,6 +8,7 @@ from PIL import Image
 import numpy as np
 import argparse
 import random
+import re
 
 from diffusers import (
     StableDiffusionPipeline,
@@ -32,6 +33,26 @@ def parse_arguments():
     parser.add_argument("--num-samples-by-id", type=int, default=4)
     args = parser.parse_args()
     return args
+
+
+def natural_sort(l):
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(l, key=alphanum_key)
+
+
+def get_all_files_in_path(folder_path, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'], pattern=''):
+    file_list = []
+    for root, _, files in os.walk(folder_path):
+        for filename in files:
+            path_file = os.path.join(root, filename)
+            for ext in file_extension:
+                if pattern in path_file and path_file.lower().endswith(ext.lower()):
+                    file_list.append(path_file)
+                    # print(f'Found files: {len(file_list)}', end='\r')
+    # print()
+    file_list = natural_sort(file_list)
+    return file_list
 
 
 def get_random_float(min_max_list):
@@ -103,7 +124,7 @@ def rotate_embedding_by_cosine_similarity(v1: torch.Tensor, cosine_similarity: f
 if __name__ == '__main__':
 
     args = parse_arguments()
-    assert os.path.isfile(args.path_input), f"Error: file not found \'{args.path_input}\'"
+    assert os.path.isfile(args.path_input) or os.path.isdir(args.path_input), f"Error: no such file or dir \'{args.path_input}\'"
 
     # Arc2Face is built upon SD1.5
     # The repo below can be used instead of the now deprecated 'runwayml/stable-diffusion-v1-5'
@@ -131,30 +152,59 @@ if __name__ == '__main__':
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
     pipeline = pipeline.to('cuda')
 
+    app = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    app.prepare(ctx_id=0, det_size=(640, 640))
 
-    if args.path_input.endswith('.npy') or args.path_input.endswith('.pt'):
-        src_id_emb = load_embedding(args.path_input)
-    else:
-        img = np.array(Image.open(args.path_input))[:,:,::-1]
-        if img.shape[0] == 112 and img.shape[1] == 112:   # face already aligned
-            # src_id_emb = 
-            pass
+
+
+    if os.path.isfile(args.path_input):
+        if args.path_input.endswith('.npy') or args.path_input.endswith('.pt'):
+            src_id_emb = load_embedding(args.path_input)
         else:
-            # Pick an image and extract the ID-embedding:
-            app = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-            app.prepare(ctx_id=0, det_size=(640, 640))
-            faces = app.get(img)   # detect face
-            # print('faces:', faces)
-            # sys.exit(0)
-            if len(faces) == 0:   # no face detected
-                raise Exception(f'No face detected in image: \'{args.path_input}\'')
-            faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
-            src_id_emb = faces['embedding']
-    src_id_emb = torch.tensor(src_id_emb, dtype=torch.float16)[None].cuda()
-    # print('src_id_emb:', src_id_emb)
-    # print('src_id_emb.shape:', src_id_emb.shape)
-    # sys.exit(0)
+            img = np.array(Image.open(args.path_input))[:,:,::-1]
+            if img.shape[0] == 112 and img.shape[1] == 112:   # face already aligned
+                # src_id_emb = 
+                pass
+            else:
+                # Pick an image and extract the ID-embedding:
+                # app = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                # app.prepare(ctx_id=0, det_size=(640, 640))
+                faces = app.get(img)   # detect face
+                # print('faces:', faces)
+                # sys.exit(0)
+                if len(faces) == 0:   # no face detected
+                    raise Exception(f'No face detected in image: \'{args.path_input}\'')
+                faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
+                src_id_emb = faces['embedding']
 
+    elif os.path.isdir(args.path_input):
+        paths_files = get_all_files_in_path(args.path_input, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'])
+        src_id_embedds = torch.zeros((len(paths_files), 512))
+        for idx_path, path_file in enumerate(paths_files):
+            if path_file.endswith('.npy') or path_file.endswith('.pt'):
+                src_id_embedds[idx_path] = load_embedding(path_file)
+            else:
+                img = np.array(Image.open(path_file))[:,:,::-1]
+                if img.shape[0] == 112 and img.shape[1] == 112:   # face already aligned
+                    # src_id_emb = 
+                    pass
+                else:
+                    # Pick an image and extract the ID-embedding:
+                    # app = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                    # app.prepare(ctx_id=0, det_size=(640, 640))
+                    faces = app.get(img)   # detect face
+                    # print('faces:', faces)
+                    # sys.exit(0)
+                    if len(faces) == 0:   # no face detected
+                        raise Exception(f'No face detected in image: \'{path_file}\'')
+                    faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
+                    src_id_embedds[idx_path] = faces['embedding']
+        src_id_emb = src_id_embedds.mean(axis=0)
+        # print('src_id_embedds.shape:', src_id_embedds.shape)
+        # print('src_id_emb.shape:', src_id_emb.shape)
+        # sys.exit(0)
+
+    src_id_emb = torch.tensor(src_id_emb, dtype=torch.float16)[None].cuda()
 
     similarity = get_random_float(args.similarity_range)
     print('similarity:', similarity)
@@ -168,7 +218,10 @@ if __name__ == '__main__':
     # Generate images:
     print(f'Generating {args.num_samples_by_id} new images...')
     images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
-    output_folder = f"{os.path.splitext(args.path_input)[0]}_newId_sim={similarity}"
+    if os.path.isfile(args.path_input):
+        output_folder = f"{os.path.splitext(args.path_input)[0]}_newId_sim={similarity}"
+    elif os.path.isdir(args.path_input):
+        output_folder = f"{os.path.join(args.path_input,args.path_input.split('/')[-1])}_avgEmbedd_newId_sim={similarity}"
     os.makedirs(output_folder, exist_ok=True)
     for i, img in enumerate(images):
         output_img_name = os.path.splitext(os.path.basename(args.path_input))[0]
