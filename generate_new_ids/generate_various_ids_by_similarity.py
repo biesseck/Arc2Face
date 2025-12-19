@@ -14,6 +14,7 @@ from PIL import Image
 import numpy as np
 import argparse
 import random
+import time
 import re
 import json
 
@@ -36,8 +37,9 @@ def parse_list_arg(arg_string):
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--path-dataset",      type=str, default="/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS")
-    parser.add_argument("--path-subj-list",    type=str, default="/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json")
+    parser.add_argument("--path-subj-list",    type=str, default="")   # /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json
     parser.add_argument("--similarity-range",  type=parse_list_arg, default=[0.5,0.69], required=True, help='A list of float values separated by commas, e.g., 0.5,0.69 or [0.5,0.69]')
+    parser.add_argument("--num-new-ids",       type=int, default=-1)   # -1 == one new synthetic id for each real id
     parser.add_argument("--num-samples-by-id", type=int, default=50)
     parser.add_argument("--path-output",       type=str, default="")
     args = parser.parse_args()
@@ -62,6 +64,12 @@ def get_all_files_in_path(folder_path, file_extension=['.jpg','.jpeg','.png', '.
     # print()
     file_list = natural_sort(file_list)
     return file_list
+
+
+def get_immediate_subdirs(parent_dir=''):
+    subdirs = [os.path.join(parent_dir, name) for name in os.listdir(parent_dir) if os.path.isdir(os.path.join(parent_dir, name))]
+    subdirs = natural_sort(subdirs)
+    return subdirs
 
 
 def load_json(path_file=''):
@@ -178,7 +186,7 @@ if __name__ == '__main__':
 
     args = parse_arguments()
     assert os.path.isdir(args.path_dataset), f"Error, no such dir: \'{args.path_dataset}\'"
-    assert os.path.isfile(args.path_subj_list), f"Error, no such file: \'{args.path_subj_list}\'"
+    if args.path_subj_list: assert os.path.isfile(args.path_subj_list), f"Error, no such file: \'{args.path_subj_list}\'"
 
     if not args.path_output:
         args.path_output = f"{args.path_dataset}_newSynthIDs_Arc2Face_sim={args.similarity_range}".replace(' ','')
@@ -188,11 +196,26 @@ if __name__ == '__main__':
     pipeline = get_arc2face_model()
     fr_model = get_face_recognition_model()
 
-    json_subjs_list = load_json(args.path_subj_list)
-    subjs_orig_paths = [subj_path[0][0] for subj_path in json_subjs_list.values()]
-    subjs_names = [subj_name.split('/')[-2] for subj_name in subjs_orig_paths]
+    if args.path_subj_list:
+        json_subjs_list = load_json(args.path_subj_list)
+        subjs_orig_paths = [subj_path[0][0] for subj_path in json_subjs_list.values()]
+        subjs_names = [subj_name.split('/')[-2] for subj_name in subjs_orig_paths]
+    else:
+        subjs_orig_paths = get_immediate_subdirs(args.path_dataset)
+        subjs_names = [subj_name.split('/')[-1] for subj_name in subjs_orig_paths]
+
+    if args.num_new_ids == 0:
+        print('\n--num-new-ids == 0, no new synthetic identities will be generated!')
+        sys.exit(0)
+    elif args.num_new_ids > 0:
+        random.seed(440)
+        random.shuffle(subjs_names)
+        subjs_names = subjs_names[:args.num_new_ids]
+        args.path_output += f'_{args.num_new_ids}ids'
+
 
     for idx_subj, subj_name in enumerate(subjs_names):
+        start_time = time.time()
         path_dir_subj = os.path.join(args.path_dataset, subj_name)
         path_mean_embedding_subj = get_all_files_in_path(path_dir_subj, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'], pattern='_mean_embedding_')
 
@@ -227,7 +250,7 @@ if __name__ == '__main__':
         new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
 
         # Generate images:
-        print(f'{idx_subj}/{len(subjs_names)} Generating {args.num_samples_by_id} new images...')
+        print(f'id {idx_subj}/{len(subjs_names)} - Generating {args.num_samples_by_id} new images...')
         new_id_emb = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
         images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
 
@@ -239,6 +262,10 @@ if __name__ == '__main__':
             print(f"    Saving output img: \'{path_output_img}\'", end='\r')
             img.save(path_output_img)
         print()
+        exec_time = time.time() - start_time
+        remain_time = exec_time * (len(subjs_names)-idx_subj+1)
+        print('    Exec time: %.2fsec    %.2fmin    %.2fhour' % (exec_time, exec_time/60, exec_time/3600))
+        print('    Remaining time: %.2fsec    %.2fmin    %.2fhour' % (remain_time, remain_time/60, remain_time/3600))
         print('------------')
 
     print('\nFinished!')
