@@ -182,6 +182,8 @@ if __name__ == '__main__':
 
     if not args.path_output:
         args.path_output = f"{args.path_dataset}_newSynthIDs_Arc2Face_sim={args.similarity_range}".replace(' ','')
+    else:
+        args.path_output = os.path.join(args.path_output, f"{args.path_dataset.split('/')[-1]}_newSynthIDs_Arc2Face_sim={args.similarity_range}".replace(' ',''))
 
     pipeline = get_arc2face_model()
     fr_model = get_face_recognition_model()
