@@ -1,3 +1,6 @@
 *.pyc
 models/*
 assets/*
+
+generate_new_ids/*/*.png
+generate_new_ids/*/*.ply

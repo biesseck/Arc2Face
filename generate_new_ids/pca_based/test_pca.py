@@ -33,6 +33,52 @@ def generate_data(n_classes, points_per_class, dim, seed):
     return np.vstack(all_points), np.array(labels)
 
 
+def generate_angular_data(n_classes, points_per_class, dim, seed):
+    np.random.seed(seed)
+    all_points = []
+    labels = []
+    
+    # concentration controls the 'width' (opening angle) of the cone
+    # angle_sigma = 0.1 
+    angle_sigma = 0.05
+    # magnitude controls the 'length' and thickness of the cone
+    mag_min, mag_max = 0.5, 1.5
+
+    for i in range(n_classes):
+        # 1. Generate a random unit vector for the class axis
+        center = np.random.normal(0, 1, dim)
+        center /= np.linalg.norm(center)
+        
+        # 2. Create orthogonal basis for the spread
+        if dim == 3:
+            ref = np.array([1, 0, 0]) if abs(center[0]) < 0.9 else np.array([0, 1, 0])
+            v1 = np.cross(center, ref); v1 /= np.linalg.norm(v1)
+            v2 = np.cross(center, v1); v2 /= np.linalg.norm(v2)
+            
+            # Angular noise (the "flare" of the cone)
+            noise = np.random.normal(0, angle_sigma, (points_per_class, 2))
+            directions = (np.outer(np.ones(points_per_class), center) + 
+                          np.outer(noise[:, 0], v1) + 
+                          np.outer(noise[:, 1], v2))
+        else: # 2D
+            v1 = np.array([-center[1], center[0]])
+            noise = np.random.normal(0, angle_sigma, (points_per_class, 1))
+            directions = (np.outer(np.ones(points_per_class), center) + 
+                          np.outer(noise[:, 0], v1))
+
+        # 3. Normalize directions to unit vectors first...
+        directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+        
+        # 4. ...then multiply by random magnitudes to fill the cone's volume
+        magnitudes = np.random.uniform(mag_min, mag_max, (points_per_class, 1))
+        conical_cluster = directions * magnitudes
+        
+        all_points.append(conical_cluster)
+        labels.extend([i] * points_per_class)
+        
+    return np.vstack(all_points), np.array(labels)
+
+
 def save_2d_chart(filename, nclasses, X, y, mean_point, pc_vectors, dpi=200):
     plt.figure(figsize=(8, 6), dpi=dpi)
         
@@ -115,7 +161,8 @@ def main():
     args = parse_args()
 
     # 1. Generate Data
-    X, y = generate_data(args.classes, args.points_per_class, args.dim, args.seed)
+    # X, y = generate_data(args.classes, args.points_per_class, args.dim, args.seed)
+    X, y = generate_angular_data(args.classes, args.points_per_class, args.dim, args.seed)
 
     # 2. Compute PCA
     pca = PCA(n_components=args.dim)
@@ -128,7 +175,7 @@ def main():
 
     now = datetime.now()
     formatted_time = now.strftime('%Y-%m-%d_%H-%M-%S.%f')[:-3]
-    filename = f"pca_output_{args.dim}D_classes={args.classes}_points={args.points_per_class}_seed={args.seed}_date={formatted_time}"
+    filename = f"pca_output_{args.dim}D_classes={args.classes}_points={args.points_per_class}_date={formatted_time}_seed={args.seed}"
 
     # 3. Visualization/Export
     if args.dim == 2:
