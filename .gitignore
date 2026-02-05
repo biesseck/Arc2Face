@@ -4,3 +4,5 @@ assets/*
 
 generate_new_ids/*/*.png
 generate_new_ids/*/*.ply
+generate_new_ids/*/*.npz
+generate_new_ids/*/*.vtk

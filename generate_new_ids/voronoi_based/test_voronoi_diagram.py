@@ -350,6 +350,23 @@ def save_3d_vtp_with_sites(vexp, path_vtp):
 
 
 
+def generate_angular_data(n_classes, dim, seed):
+    np.random.seed(seed)
+    all_points = []
+    labels = []
+
+    for i in range(n_classes):
+        # 1. Generate a random unit vector for the class axis
+        center = np.random.normal(0, 1, dim)
+        center /= np.linalg.norm(center)
+        
+        all_points.append(center)
+        labels.extend([i])
+
+    return np.vstack(all_points), np.array(labels)
+
+
+
 def main() -> None:
     args = parse_args()
 
@@ -358,8 +375,9 @@ def main() -> None:
     if args.dim < 2:
         raise SystemExit("--dim must be >= 2")
 
-    rng = np.random.default_rng(args.seed)
-    pts = rng.random((args.npoints, args.dim), dtype=np.float64)
+    # rng = np.random.default_rng(args.seed)
+    # pts = rng.random((args.npoints, args.dim), dtype=np.float64)
+    pts, labels = generate_angular_data(args.npoints, args.dim, args.seed)
     print('pts.shape:', pts.shape)
     # sys.exit(0)
 
