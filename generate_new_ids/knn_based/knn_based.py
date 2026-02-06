@@ -241,26 +241,22 @@ def save_void_visualization_3d_wireframe(centroids, target_idx, neighbor_indices
     """
     Saves a 3D PLY where:
     - Centroids are standard vertices (dots).
-    - Void Vector is a WIREFRAME Box (Edges), ensuring compatability with dot rendering.
+    - Void Vector is a WIREFRAME Pyramid (Edges) representing an arrow.
     """
     
     # 1. PREPARE CENTROIDS
     n_centroids = len(centroids)
     
     # Colors
-    # Default Grey
     colors = np.full((n_centroids, 3), 200, dtype=int)
-    # Neighbors Blue
-    colors[neighbor_indices] = [0, 100, 255]
-    # Target Red
-    colors[target_idx] = [255, 0, 0]
+    colors[neighbor_indices] = [0, 100, 255] # Neighbors Blue
+    colors[target_idx] = [255, 0, 0] # Target Red
 
-    # 2. GENERATE WIREFRAME BOX VERTICES
-    # We define a box from 'start' to 'end'
+    # 2. GENERATE PYRAMID VERTICES
     start_pt = centroids[target_idx]
     end_pt = start_pt + void_vector
     
-    # Calculate box orientation
+    # Calculate orientation for the base
     vec = end_pt - start_pt
     length = np.linalg.norm(vec)
     z_axis = vec / length
@@ -270,45 +266,40 @@ def save_void_visualization_3d_wireframe(centroids, target_idx, neighbor_indices
     x_axis /= np.linalg.norm(x_axis)
     y_axis = np.cross(z_axis, x_axis)
     
-    thickness = 0.005 # Thickness of the wireframe box
+    thickness = 0.005 
     
-    # 4 corners around the axis
+    # 4 corners around the start point to form the pyramid base
     offsets = [
         (x_axis + y_axis)*thickness, (x_axis - y_axis)*thickness,
         (-x_axis - y_axis)*thickness, (-x_axis + y_axis)*thickness
     ]
     
-    box_vertices = []
-    # Base Ring (at start_pt)
-    for off in offsets: box_vertices.append(start_pt + off)
-    # Tip Ring (at end_pt)
-    for off in offsets: box_vertices.append(end_pt + off)
+    pyramid_vertices = []
+    # Base Ring (at start_pt) - Indices 0, 1, 2, 3
+    for off in offsets: pyramid_vertices.append(start_pt + off)
+    # The Tip (at end_pt) - Index 4
+    pyramid_vertices.append(end_pt)
     
-    box_vertices = np.array(box_vertices)
+    pyramid_vertices = np.array(pyramid_vertices)
     # Make wireframe Green
-    box_colors = np.tile([50, 205, 50], (8, 1))
+    pyramid_colors = np.tile([50, 205, 50], (5, 1))
     
-    # 3. DEFINE EDGES (Lines connecting the 8 corners)
-    # Indices of box vertices relative to the start of the box block
-    # Base: 0,1,2,3 | Tip: 4,5,6,7
-    
-    # We need to offset these by the number of existing centroids
+    # 3. DEFINE EDGES
+    # Base: 0,1,2,3 | Tip: 4
     offset = n_centroids 
     
     wireframe_edges = [
-        # Base Ring
+        # Base Ring (Square)
         (0,1), (1,2), (2,3), (3,0),
-        # Tip Ring
-        (4,5), (5,6), (6,7), (7,4),
-        # Connecting Lines (Base to Tip)
-        (0,4), (1,5), (2,6), (3,7)
+        # Connecting Lines (Base corners to the single Tip vertex)
+        (0,4), (1,4), (2,4), (3,4)
     ]
     
     final_edges = [(e[0]+offset, e[1]+offset) for e in wireframe_edges]
 
     # 4. COMBINE AND SAVE
-    all_vertices = np.vstack([centroids, box_vertices])
-    all_colors = np.vstack([colors, box_colors])
+    all_vertices = np.vstack([centroids, pyramid_vertices])
+    all_colors = np.vstack([colors, pyramid_colors])
 
     with open(filename, 'w') as f:
         f.write("ply\nformat ascii 1.0\n")
@@ -327,7 +318,7 @@ def save_void_visualization_3d_wireframe(centroids, target_idx, neighbor_indices
         for e in final_edges:
             f.write(f"{e[0]} {e[1]}\n")
             
-    print(f"Wireframe Void visualization saved to {filename}")
+    print(f"Wireframe Pyramid Void visualization saved to {filename}")
 
 
 
