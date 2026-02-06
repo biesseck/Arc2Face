@@ -277,9 +277,9 @@ if __name__ == '__main__':
     else:
         args.path_output = os.path.join(args.path_output, f"{args.path_dataset.split('/')[-1]}_newSynthIDs_Arc2Face_sim={args.similarity_range}".replace(' ',''))
 
-    # TODO: UNCOMMENT
-    # pipeline = get_arc2face_model()
-    # fr_model = get_face_recognition_model()
+    print('Loading Arc2Face model...')
+    pipeline = get_arc2face_model()
+    fr_model = get_face_recognition_model()
 
     if args.path_subj_list:
         json_subjs_list = load_json(args.path_subj_list)
