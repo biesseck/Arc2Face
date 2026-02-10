@@ -45,6 +45,7 @@ def parse_arguments():
     parser.add_argument("--similarity-range",    type=parse_list_arg, default=[0.5,0.69], required=True, help='A list of float values separated by commas, e.g., 0.5,0.69 or [0.5,0.69]')
     parser.add_argument("--num-new-ids",         type=int, default=-1)   # -1 == one new synthetic id for each real id
     parser.add_argument("--num-samples-by-id",   type=int, default=50)
+    parser.add_argument("--batch",               type=int, default=25)
     parser.add_argument("--num-inference-steps", type=int, default=25)
     parser.add_argument("--k",                   type=int, default=5)
     parser.add_argument("--path-output",         type=str, default="")
@@ -274,6 +275,8 @@ def flat_array_remove_invalid_values(array, invalid_value=-1):
 if __name__ == '__main__':
 
     args = parse_arguments()
+    assert args.num_samples_by_id >= args.batch, f"Error, --num-samples-by-id must be greater or equal to --batch"
+    assert args.num_samples_by_id % args.batch == 0, f"Error, --num-samples-by-id must be a multiple of --batch"
     assert os.path.isdir(args.path_dataset), f"Error, no such dir: \'{args.path_dataset}\'"
     if args.path_subj_list: assert os.path.isfile(args.path_subj_list), f"Error, no such file: \'{args.path_subj_list}\'"
 
@@ -445,6 +448,7 @@ if __name__ == '__main__':
     chart_file_path = os.path.join(args.path_output, chart_file_name)
     print(f'Saving histogram: \'{chart_file_path}\'')
     save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, chart_file_path, title)
+    print('----------')
 
     # sys.exit(0)
 
@@ -498,12 +502,18 @@ if __name__ == '__main__':
         new_id_emb_proj = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
         # print('new_id_emb_proj.shape:', new_id_emb_proj.shape)
         # print('new_id_emb_proj.norm():', torch.norm(new_id_emb_proj))
-        images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
+        
+        num_runs = int(args.num_samples_by_id / args.batch)
+        all_generated_images = []
+        for idx_run in range(num_runs):
+            print(f'    run {idx_run}/{num_runs}')
+            images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.batch).images
+            all_generated_images.extend(images)
 
         path_dir_subj = os.path.join(args.path_dataset, subj_name)
         output_folder = f"{os.path.join(args.path_output,f'imgs_steps={args.num_inference_steps}',path_dir_subj.split('/')[-1])}_newId_sim={all_similarities[idx_subj]}"
         os.makedirs(output_folder, exist_ok=True)
-        for i, img in enumerate(images):
+        for i, img in enumerate(all_generated_images):
             output_img_name = os.path.splitext(os.path.basename(path_dir_subj))[0]
             path_output_img = os.path.join(output_folder, f"{output_img_name}_newID_newSample_{i}.png")
             print(f"    Saving output img: \'{path_output_img}\'", end='\r')
