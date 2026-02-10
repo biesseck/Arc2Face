@@ -40,14 +40,15 @@ def parse_list_arg(arg_string):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path-dataset",      type=str, default="/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS")
-    parser.add_argument("--path-subj-list",    type=str, default="")   # /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json
-    parser.add_argument("--similarity-range",  type=parse_list_arg, default=[0.5,0.69], required=True, help='A list of float values separated by commas, e.g., 0.5,0.69 or [0.5,0.69]')
-    parser.add_argument("--num-new-ids",       type=int, default=-1)   # -1 == one new synthetic id for each real id
-    parser.add_argument("--num-samples-by-id", type=int, default=50)
-    parser.add_argument("--k",                 type=int, default=5)
-    parser.add_argument("--path-output",       type=str, default="")
-    parser.add_argument('--dataset_name',      default='New Synthetic Subjects', type=str, help='')
+    parser.add_argument("--path-dataset",        type=str, default="/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS")
+    parser.add_argument("--path-subj-list",      type=str, default="")   # /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json
+    parser.add_argument("--similarity-range",    type=parse_list_arg, default=[0.5,0.69], required=True, help='A list of float values separated by commas, e.g., 0.5,0.69 or [0.5,0.69]')
+    parser.add_argument("--num-new-ids",         type=int, default=-1)   # -1 == one new synthetic id for each real id
+    parser.add_argument("--num-samples-by-id",   type=int, default=50)
+    parser.add_argument("--num-inference-steps", type=int, default=25)
+    parser.add_argument("--k",                   type=int, default=5)
+    parser.add_argument("--path-output",         type=str, default="")
+    parser.add_argument('--dataset_name',        default='New Synthetic Subjects', type=str, help='')
     args = parser.parse_args()
     return args
 
@@ -200,12 +201,13 @@ def rotate_embedding_by_cosine_similarity(v1: torch.Tensor, void_vector: torch.T
     return v1_prime
 
 
-def compute_class_centroids(embedds_feats, embedds_classes_int):
+def compute_class_centroids(embedds_feats, embedds_labels_int, embedds_labels_str):
     feats = np.asarray(embedds_feats)
-    labels = np.asarray(embedds_classes_int)
+    labels_int = np.asarray(embedds_labels_int)
     
-    unique_labels, inverse, counts = np.unique(labels, return_inverse=True, return_counts=True)
-    num_classes = len(unique_labels)
+    unique_labels_int, inverse, counts = np.unique(labels_int, return_inverse=True, return_counts=True)
+    unique_labels_str = list(dict.fromkeys(embedds_labels_str))
+    num_classes = len(unique_labels_int)
     dim = feats.shape[1]
     
     centroids = np.zeros((num_classes, dim), dtype=feats.dtype)
@@ -213,7 +215,7 @@ def compute_class_centroids(embedds_feats, embedds_classes_int):
     
     centroids /= counts[:, np.newaxis]
     
-    return centroids, unique_labels
+    return centroids, unique_labels_int, unique_labels_str
 
 
 def find_tangent_void_direction(target_centroid, neighbor_centroids):
@@ -337,11 +339,13 @@ if __name__ == '__main__':
     print(f'------------------')
 
 
+
     if not 'embedds_centroids' in dict_dataset_all_embedds:
         print('Computing centroids...')
-        embedds_centroids, embedds_centroids_labels = compute_class_centroids(embedds_feats, embedds_classes_int)
+        embedds_centroids, embedds_centroids_labels_int, embedds_centroids_labels_str = compute_class_centroids(embedds_feats, embedds_classes_int, embedds_classes_str)
         print('embedds_centroids.shape:', embedds_centroids.shape)
-        print('embedds_centroids_labels.shape:', embedds_centroids_labels.shape)
+        print('embedds_centroids_labels_int.shape:', embedds_centroids_labels_int.shape)
+        print('len(embedds_centroids_labels_str):', len(embedds_centroids_labels_str))
         centroids_norm = embedds_centroids / np.linalg.norm(embedds_centroids, axis=1, keepdims=True)
         # print(f'------------------')
 
@@ -350,18 +354,20 @@ if __name__ == '__main__':
         print('sim_matrix.shape:', sim_matrix.shape)
         # print(f'------------------')
 
-        dict_dataset_all_embedds['embedds_centroids']        = embedds_centroids
-        dict_dataset_all_embedds['embedds_centroids_labels'] = embedds_centroids_labels
-        dict_dataset_all_embedds['embedds_centroids_norm']   = centroids_norm
-        dict_dataset_all_embedds['sim_matrix']               = sim_matrix
+        dict_dataset_all_embedds['embedds_centroids']            = embedds_centroids
+        dict_dataset_all_embedds['embedds_centroids_labels_int'] = embedds_centroids_labels_int
+        dict_dataset_all_embedds['embedds_centroids_labels_str'] = embedds_centroids_labels_str
+        dict_dataset_all_embedds['embedds_centroids_norm']       = centroids_norm
+        dict_dataset_all_embedds['sim_matrix']                   = sim_matrix
         print(f'Saving centroids: \'{dataset_all_embedds_file_path}\'')
         save_dict_to_pickle(dict_dataset_all_embedds, dataset_all_embedds_file_path)
     else:
         print(f'Loading centroids: \'{dataset_all_embedds_file_path}\'')
-        embedds_centroids        = dict_dataset_all_embedds['embedds_centroids']
-        embedds_centroids_labels = dict_dataset_all_embedds['embedds_centroids_labels']
-        centroids_norm           = dict_dataset_all_embedds['embedds_centroids_norm']
-        sim_matrix               = dict_dataset_all_embedds['sim_matrix']
+        embedds_centroids            = dict_dataset_all_embedds['embedds_centroids']
+        embedds_centroids_labels_int = dict_dataset_all_embedds['embedds_centroids_labels_int']
+        embedds_centroids_labels_str = dict_dataset_all_embedds['embedds_centroids_labels_str']
+        centroids_norm               = dict_dataset_all_embedds['embedds_centroids_norm']
+        sim_matrix                   = dict_dataset_all_embedds['sim_matrix']
     print(f'------------------')
 
     print('Computing sums of similarities...')
@@ -373,10 +379,11 @@ if __name__ == '__main__':
     print(f'------------------')
 
 
-    all_new_embedds = torch.zeros_like(torch.tensor(embedds_centroids))
-    for idx_subj, subj_label in enumerate(embedds_centroids_labels):
-        print(f'{idx_subj}/{len(embedds_centroids_labels)} - Computing void direction vectors', end='\r')
-        # print(f'{idx_subj}/{len(embedds_centroids_labels)} - Computing void direction vectors',)
+    all_new_embedds = torch.zeros_like(torch.tensor(embedds_centroids), dtype=torch.float16)
+    all_similarities = torch.empty((len(all_new_embedds,)), dtype=torch.float32)
+    for idx_subj, subj_label in enumerate(embedds_centroids_labels_int):
+        print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors', end='\r')
+        # print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors',)
         target_idx = isolated_indices[idx_subj]
         target_centroid = embedds_centroids[target_idx,:]
         # print('target_centroid.shape:', target_centroid.shape)
@@ -387,9 +394,9 @@ if __name__ == '__main__':
         # void_vector = find_void_direction(target_centroid, neighbor_centroids)
         void_vector = find_tangent_void_direction(target_centroid, neighbor_centroids)
 
-        similarity = get_random_float(args.similarity_range)
+        all_similarities[idx_subj] = get_random_float(args.similarity_range)
         # print('similarity:', similarity)
-        new_id_emb = rotate_embedding_by_cosine_similarity(target_centroid, void_vector, similarity)
+        new_id_emb = rotate_embedding_by_cosine_similarity(target_centroid, void_vector, all_similarities[idx_subj])
         # print('new_id_emb.shape:', new_id_emb.shape)
         new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
 
@@ -431,11 +438,13 @@ if __name__ == '__main__':
     print(f'Saving histogram: \'{chart_file_path}\'')
     save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, chart_file_path, title)
 
-    sys.exit(0)
+    # sys.exit(0)
 
 
-    for idx_subj, subj_name in enumerate(subjs_names):
+    # for idx_subj, subj_name in enumerate(subjs_names):
+    for idx_subj, subj_name in enumerate(embedds_centroids_labels_str):
         start_time = time.time()
+        '''
         path_dir_subj = os.path.join(args.path_dataset, subj_name)
         path_mean_embedding_subj = get_all_files_in_path(path_dir_subj, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'], pattern='_mean_embedding_')
 
@@ -468,13 +477,19 @@ if __name__ == '__main__':
         # Generate new identity embedding
         new_id_emb = rotate_embedding_by_cosine_similarity(src_id_emb, similarity)
         new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
+        '''
 
+        new_id_emb = all_new_embedds[idx_subj,:].to("cuda")
+        new_id_emb = torch.unsqueeze(new_id_emb, 0)
+        new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
+        
         # Generate images:
         print(f'id {idx_subj}/{len(subjs_names)} - Generating {args.num_samples_by_id} new images...')
         new_id_emb = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
-        images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
+        images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
 
-        output_folder = f"{os.path.join(args.path_output,path_dir_subj.split('/')[-1])}_newId_sim={similarity}"
+        path_dir_subj = os.path.join(args.path_dataset, subj_name)
+        output_folder = f"{os.path.join(args.path_output,f'imgs_steps={args.num_inference_steps}',path_dir_subj.split('/')[-1])}_newId_sim={all_similarities[idx_subj]}"
         os.makedirs(output_folder, exist_ok=True)
         for i, img in enumerate(images):
             output_img_name = os.path.splitext(os.path.basename(path_dir_subj))[0]
