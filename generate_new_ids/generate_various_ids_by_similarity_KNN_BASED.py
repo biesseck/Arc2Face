@@ -379,9 +379,12 @@ if __name__ == '__main__':
     print('Computing sums of similarities...')
     k = args.k
     k_sim_sums = np.sort(sim_matrix, axis=1)[:, -(k+1):-1].sum(axis=1)
+    print('k_sim_sums', k_sim_sums)
     print('k_sim_sums.shape:', k_sim_sums.shape)
     isolated_indices = np.argsort(k_sim_sums)
+    print('isolated_indices:', isolated_indices)
     print('isolated_indices.shape:', isolated_indices.shape)
+    # sys.exit(0)
     print(f'------------------')
 
 
@@ -389,13 +392,14 @@ if __name__ == '__main__':
     all_new_embedds_labels_int = []
     all_new_embedds_labels_str = []
     all_similarities = torch.empty((len(all_new_embedds,)), dtype=torch.float32)
-    for idx_subj, subj_label in enumerate(embedds_centroids_labels_int):
-        print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors', end='\r')
-        # print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors',)
+    for idx_subj, _ in enumerate(embedds_centroids_labels_str):
         target_idx = isolated_indices[idx_subj]
+        print(f'{idx_subj}/{len(isolated_indices)} - subj \'{embedds_centroids_labels_str[target_idx]}\' - Computing void direction vectors', end='\r')
+        # print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors',)
         all_new_embedds_labels_int.append(target_idx)
         all_new_embedds_labels_str.append(embedds_centroids_labels_str[target_idx])
         target_centroid = embedds_centroids[target_idx,:]
+        # print('\ntarget_idx:', target_idx, f'    embedds_centroids_labels_str[{target_idx}]:', embedds_centroids_labels_str[target_idx])
         # print('target_centroid.shape:', target_centroid.shape)
         target_sims = sim_matrix[target_idx]
         sorted_indices = np.argsort(target_sims)[::-1]
