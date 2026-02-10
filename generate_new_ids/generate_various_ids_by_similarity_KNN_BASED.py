@@ -456,40 +456,6 @@ if __name__ == '__main__':
     # for idx_subj, subj_name in enumerate(subjs_names):
     for idx_subj, subj_name in enumerate(all_new_embedds_labels_str):
         start_time = time.time()
-        '''
-        path_dir_subj = os.path.join(args.path_dataset, subj_name)
-        path_mean_embedding_subj = get_all_files_in_path(path_dir_subj, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'], pattern='_mean_embedding_')
-
-        if len(path_mean_embedding_subj) > 0:
-            src_id_emb = load_embedding(path_mean_embedding_subj[0])
-        else:
-            paths_files = get_all_files_in_path(path_dir_subj, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'])
-            src_id_embedds = torch.zeros((len(paths_files), 512))
-            for idx_path, path_file in enumerate(paths_files):
-                if path_file.endswith('.npy') or path_file.endswith('.pt'):
-                    src_id_embedds[idx_path] = load_embedding(path_file)
-                else:
-                    img = np.array(Image.open(path_file))[:,:,::-1]
-                    if img.shape[0] == 112 and img.shape[1] == 112:   # face already aligned
-                        # src_id_emb = 
-                        pass
-                    else:
-                        faces = fr_model.get(img)   # detect face
-                        if len(faces) == 0:   # no face detected
-                            raise Exception(f'No face detected in image: \'{path_file}\'')
-                        faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
-                        src_id_embedds[idx_path] = faces['embedding']
-            src_id_emb = src_id_embedds.mean(axis=0)
-        
-        src_id_emb = torch.tensor(src_id_emb, dtype=torch.float16)[None].cuda()
-
-        similarity = get_random_float(args.similarity_range)
-        print('similarity:', similarity)
-
-        # Generate new identity embedding
-        new_id_emb = rotate_embedding_by_cosine_similarity(src_id_emb, similarity)
-        new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
-        '''
 
         new_id_emb = all_new_embedds[idx_subj,:].to("cuda")
         new_id_emb = torch.unsqueeze(new_id_emb, 0)
@@ -519,6 +485,7 @@ if __name__ == '__main__':
             print(f"    Saving output img: \'{path_output_img}\'", end='\r')
             img.save(path_output_img)
         print()
+
         exec_time = time.time() - start_time
         remain_time = exec_time * (len(subjs_names)-idx_subj+1)
         print('    Exec time: %.2fsec    %.2fmin    %.2fhour' % (exec_time, exec_time/60, exec_time/3600))
