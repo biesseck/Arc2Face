@@ -405,7 +405,8 @@ if __name__ == '__main__':
         # print('similarity:', similarity)
         new_id_emb = rotate_embedding_by_cosine_similarity(target_centroid, void_vector, all_similarities[idx_subj])
         # print('new_id_emb.shape:', new_id_emb.shape)
-        new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
+        # print('new_id_emb.norm():', np.linalg.norm(new_id_emb))
+        # new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
 
         all_new_embedds[idx_subj] = new_id_emb
         # print('all_new_embedds:', all_new_embedds)
