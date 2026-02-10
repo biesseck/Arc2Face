@@ -453,7 +453,8 @@ if __name__ == '__main__':
     # sys.exit(0)
 
 
-    # for idx_subj, subj_name in enumerate(subjs_names):
+    idx_end_subj = args.num_new_ids if args.num_new_ids > 0 else len(all_new_embedds_labels_str)
+    all_new_embedds_labels_str = all_new_embedds_labels_str[:idx_end_subj]
     for idx_subj, subj_name in enumerate(all_new_embedds_labels_str):
         start_time = time.time()
 
@@ -487,7 +488,7 @@ if __name__ == '__main__':
         print()
 
         exec_time = time.time() - start_time
-        remain_time = exec_time * (len(subjs_names)-idx_subj+1)
+        remain_time = exec_time * (len(all_new_embedds_labels_str)-idx_subj+1)
         print('    Exec time: %.2fsec    %.2fmin    %.2fhour' % (exec_time, exec_time/60, exec_time/3600))
         print('    Remaining time: %.2fsec    %.2fmin    %.2fhour' % (remain_time, remain_time/60, remain_time/3600))
         print('------------')
