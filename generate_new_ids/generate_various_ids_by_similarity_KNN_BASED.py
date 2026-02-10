@@ -206,6 +206,9 @@ def compute_class_centroids(embedds_feats, embedds_labels_int, embedds_labels_st
     labels_int = np.asarray(embedds_labels_int)
     
     unique_labels_int, inverse, counts = np.unique(labels_int, return_inverse=True, return_counts=True)
+    print('counts:', counts)
+    print('len(counts):', len(counts))
+    sys.exit(0)
     unique_labels_str = list(dict.fromkeys(embedds_labels_str))
     num_classes = len(unique_labels_int)
     dim = feats.shape[1]
@@ -380,11 +383,15 @@ if __name__ == '__main__':
 
 
     all_new_embedds = torch.zeros_like(torch.tensor(embedds_centroids), dtype=torch.float16)
+    all_new_embedds_labels_int = []
+    all_new_embedds_labels_str = []
     all_similarities = torch.empty((len(all_new_embedds,)), dtype=torch.float32)
     for idx_subj, subj_label in enumerate(embedds_centroids_labels_int):
         print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors', end='\r')
         # print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors',)
         target_idx = isolated_indices[idx_subj]
+        all_new_embedds_labels_int.append(target_idx)
+        all_new_embedds_labels_str.append(embedds_centroids_labels_str[target_idx])
         target_centroid = embedds_centroids[target_idx,:]
         # print('target_centroid.shape:', target_centroid.shape)
         target_sims = sim_matrix[target_idx]
@@ -442,7 +449,7 @@ if __name__ == '__main__':
 
 
     # for idx_subj, subj_name in enumerate(subjs_names):
-    for idx_subj, subj_name in enumerate(embedds_centroids_labels_str):
+    for idx_subj, subj_name in enumerate(all_new_embedds_labels_str):
         start_time = time.time()
         '''
         path_dir_subj = os.path.join(args.path_dataset, subj_name)
@@ -484,7 +491,7 @@ if __name__ == '__main__':
         new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
         
         # Generate images:
-        print(f'id {idx_subj}/{len(subjs_names)} - Generating {args.num_samples_by_id} new images...')
+        print(f'id {idx_subj}/{len(subjs_names)} - subj \'{subj_name}\' - Generating {args.num_samples_by_id} new images...')
         new_id_emb = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
         images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
 
