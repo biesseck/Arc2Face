@@ -490,11 +490,15 @@ if __name__ == '__main__':
         new_id_emb = all_new_embedds[idx_subj,:].to("cuda")
         new_id_emb = torch.unsqueeze(new_id_emb, 0)
         new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
-        
+        # print('new_id_emb.shape:', new_id_emb.shape)
+        # print('new_id_emb.norm():', torch.norm(new_id_emb))
+
         # Generate images:
         print(f'id {idx_subj}/{len(subjs_names)} - subj \'{subj_name}\' - Generating {args.num_samples_by_id} new images...')
-        new_id_emb = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
-        images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
+        new_id_emb_proj = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
+        # print('new_id_emb_proj.shape:', new_id_emb_proj.shape)
+        # print('new_id_emb_proj.norm():', torch.norm(new_id_emb_proj))
+        images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
 
         path_dir_subj = os.path.join(args.path_dataset, subj_name)
         output_folder = f"{os.path.join(args.path_output,f'imgs_steps={args.num_inference_steps}',path_dir_subj.split('/')[-1])}_newId_sim={all_similarities[idx_subj]}"
