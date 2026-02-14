@@ -36,12 +36,14 @@ def parse_list_arg(arg_string):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path-dataset",      type=str, default="/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS")
-    parser.add_argument("--path-subj-list",    type=str, default="")   # /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json
-    parser.add_argument("--similarity-range",  type=parse_list_arg, default=[0.5,0.69], required=True, help='A list of float values separated by commas, e.g., 0.5,0.69 or [0.5,0.69]')
-    parser.add_argument("--num-new-ids",       type=int, default=-1)   # -1 == one new synthetic id for each real id
-    parser.add_argument("--num-samples-by-id", type=int, default=50)
-    parser.add_argument("--path-output",       type=str, default="")
+    parser.add_argument("--path-dataset",        type=str, default="/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS")
+    parser.add_argument("--path-subj-list",      type=str, default="")   # /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json
+    parser.add_argument("--similarity-range",    type=parse_list_arg, default=[0.5,0.69], required=True, help='A list of float values separated by commas, e.g., 0.5,0.69 or [0.5,0.69]')
+    parser.add_argument("--num-new-ids",         type=int, default=-1)   # -1 == one new synthetic id for each real id
+    parser.add_argument("--num-samples-by-id",   type=int, default=50)
+    parser.add_argument("--batch",               type=int, default=25)
+    parser.add_argument("--num-inference-steps", type=int, default=25)
+    parser.add_argument("--path-output",         type=str, default="")
     args = parser.parse_args()
     return args
 
@@ -185,6 +187,8 @@ def rotate_embedding_by_cosine_similarity(v1: torch.Tensor, cosine_similarity: f
 if __name__ == '__main__':
 
     args = parse_arguments()
+    assert args.num_samples_by_id >= args.batch, f"Error, --num-samples-by-id must be greater or equal to --batch"
+    assert args.num_samples_by_id % args.batch == 0, f"Error, --num-samples-by-id must be a multiple of --batch"
     assert os.path.isdir(args.path_dataset), f"Error, no such dir: \'{args.path_dataset}\'"
     if args.path_subj_list: assert os.path.isfile(args.path_subj_list), f"Error, no such file: \'{args.path_subj_list}\'"
 
@@ -251,8 +255,15 @@ if __name__ == '__main__':
 
         # Generate images:
         print(f'id {idx_subj}/{len(subjs_names)} - Generating {args.num_samples_by_id} new images...')
-        new_id_emb = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
-        images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
+        new_id_emb_proj = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
+        
+        # images = pipeline(prompt_embeds=new_id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
+        num_runs = int(args.num_samples_by_id / args.batch)
+        all_generated_images = []
+        for idx_run in range(num_runs):
+            print(f'    run {idx_run}/{num_runs}')
+            images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.batch).images
+            all_generated_images.extend(images)
 
         output_folder = f"{os.path.join(args.path_output,path_dir_subj.split('/')[-1])}_newId_sim={similarity}"
         os.makedirs(output_folder, exist_ok=True)
