@@ -267,7 +267,7 @@ if __name__ == '__main__':
 
         output_folder = f"{os.path.join(args.path_output,path_dir_subj.split('/')[-1])}_newId_sim={similarity}"
         os.makedirs(output_folder, exist_ok=True)
-        for i, img in enumerate(images):
+        for i, img in enumerate(all_generated_images):
             output_img_name = os.path.splitext(os.path.basename(path_dir_subj))[0]
             path_output_img = os.path.join(output_folder, f"{output_img_name}_newID_newSample_{i}.png")
             print(f"    Saving output img: \'{path_output_img}\'", end='\r')
