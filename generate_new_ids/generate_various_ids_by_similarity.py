@@ -224,6 +224,9 @@ if __name__ == '__main__':
         random.shuffle(subjs_names)
         subjs_names = subjs_names[:args.num_new_ids]
         args.path_output += f'_{args.num_new_ids}ids'
+    elif args.path_subj_list:
+        args.path_output += f'_{len(subjs_names)}ids'
+
 
 
     for idx_subj, subj_name in enumerate(subjs_names):
