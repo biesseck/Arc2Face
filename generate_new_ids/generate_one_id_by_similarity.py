@@ -3,6 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
+import insightface
 from insightface.app import FaceAnalysis
 from PIL import Image
 import numpy as np
@@ -80,10 +81,16 @@ def get_arc2face_model():
     return pipeline
 
 
+def get_face_detection_and_recognition_model():
+    det_fr_model = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    det_fr_model.prepare(ctx_id=0, det_size=(640, 640))
+    return det_fr_model
+
+
 def get_face_recognition_model():
-    fr_model = FaceAnalysis(name='antelopev2', root='../', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-    fr_model.prepare(ctx_id=0, det_size=(640, 640))
-    return fr_model
+    model = insightface.model_zoo.get_model("../models/antelopev2/arcface.onnx")
+    model.prepare(ctx_id=0)
+    return model
 
 
 def get_random_float(min_max_list):
@@ -160,6 +167,7 @@ if __name__ == '__main__':
     assert os.path.isfile(args.path_input) or os.path.isdir(args.path_input), f"Error: no such file or dir \'{args.path_input}\'"
 
     pipeline = get_arc2face_model()
+    det_fr_model = get_face_detection_and_recognition_model()
     fr_model = get_face_recognition_model()
 
     if os.path.isfile(args.path_input):
@@ -168,10 +176,9 @@ if __name__ == '__main__':
         else:
             img = np.array(Image.open(args.path_input))[:,:,::-1]
             if img.shape[0] == 112 and img.shape[1] == 112:   # face already aligned
-                # src_id_emb = 
-                pass
+                src_id_emb = fr_model.get_feat(img)
             else:
-                faces = fr_model.get(img)   # detect face
+                faces = det_fr_model.get(img)   # detect face
                 if len(faces) == 0:   # no face detected
                     raise Exception(f'No face detected in image: \'{args.path_input}\'')
                 faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
@@ -186,14 +193,15 @@ if __name__ == '__main__':
             else:
                 img = np.array(Image.open(path_file))[:,:,::-1]
                 if img.shape[0] == 112 and img.shape[1] == 112:   # face already aligned
-                    # src_id_emb = 
-                    pass
+                    src_id_emb = fr_model.get_feat(img)
+                    src_id_emb = torch.tensor(src_id_emb)
                 else:
                     faces = fr_model.get(img)   # detect face
                     if len(faces) == 0:   # no face detected
                         raise Exception(f'No face detected in image: \'{path_file}\'')
                     faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
-                    src_id_embedds[idx_path] = faces['embedding']
+                    src_id_emb = faces['embedding']
+                src_id_embedds[idx_path] = src_id_emb
         src_id_emb = src_id_embedds.mean(axis=0)
 
     src_id_emb = torch.tensor(src_id_emb, dtype=torch.float16)[None].cuda()
