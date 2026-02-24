@@ -40,8 +40,8 @@ def parse_list_arg(arg_string):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path-dataset",        type=str, default="/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS")
-    parser.add_argument("--path-subj-list",      type=str, default="")   # /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json
+    parser.add_argument("--path-dataset",        type=str, default="/nobackup3/bjgbiesseck/CASIA-Webface/imgs_crops_112x112_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace")
+    parser.add_argument('--input-ext',           type=str, default='_embedding_r100_webface42m_arcface.npy')
     parser.add_argument("--similarity-range",    type=parse_list_arg, default=[0.5,0.69], required=True, help='A list of float values separated by commas, e.g., 0.5,0.69 or [0.5,0.69]')
     parser.add_argument("--num-new-ids",         type=int, default=-1)   # -1 == one new synthetic id for each real id
     parser.add_argument("--num-samples-by-id",   type=int, default=50)
@@ -72,6 +72,30 @@ def get_all_files_in_path(folder_path, file_extension=['.jpg','.jpeg','.png', '.
     # print()
     file_list = natural_sort(file_list)
     return file_list
+
+
+def get_all_files_paths_with_dir_classes(folder_path, file_extension=['.jpg','.jpeg','.png'], pattern=''):
+    file_list = []
+    if isinstance(file_extension, str): file_extension = [file_extension]
+    for root, _, files in os.walk(folder_path):
+        for filename in files:
+            path_file = os.path.join(root, filename)
+            for ext in file_extension:
+                if pattern in path_file and path_file.lower().endswith(ext.lower()):
+                    file_list.append(path_file)
+                    print(f'Found files: {len(file_list)}', end='\r')
+    print('\nSorting paths...')
+    file_list = natural_sort(file_list)
+    classes_str_list = [f.split('/')[-2] for f in file_list]
+    classes_str_unique_list = natural_sort(list(set(classes_str_list)))
+    classes_str_unique_int  = list(range(0, len(classes_str_unique_list)))
+    dict_classes_str_int = {class_str:class_int for (class_str,class_int) in zip(classes_str_unique_list,classes_str_unique_int)}
+    # print('dict_classes_str_int:', dict_classes_str_int)
+    # sys.exit(0)
+    # for i, class_str in enumerate():
+    classes_int_list = [dict_classes_str_int[class_str] for class_str in classes_str_list]
+
+    return file_list, classes_str_list, classes_int_list
 
 
 def get_immediate_subdirs(parent_dir=''):
@@ -152,6 +176,7 @@ def load_embedding(embedd_path=''):
     if embedd_path.endswith('.pt'):
         embedd = torch.load(embedd_path).detach()
         embedd = torch.squeeze(embedd)
+        embedd = embedd.cpu().detach().numpy()
     elif embedd_path.endswith('.npy'):
         embedd = np.load(embedd_path)
         embedd = np.squeeze(embedd)
@@ -207,9 +232,6 @@ def compute_class_centroids(embedds_feats, embedds_labels_int, embedds_labels_st
     labels_int = np.asarray(embedds_labels_int)
     
     unique_labels_int, inverse, counts = np.unique(labels_int, return_inverse=True, return_counts=True)
-    print('counts:', counts)
-    print('len(counts):', len(counts))
-    sys.exit(0)
     unique_labels_str = list(dict.fromkeys(embedds_labels_str))
     num_classes = len(unique_labels_int)
     dim = feats.shape[1]
@@ -278,7 +300,6 @@ if __name__ == '__main__':
     assert args.num_samples_by_id >= args.batch, f"Error, --num-samples-by-id must be greater or equal to --batch"
     assert args.num_samples_by_id % args.batch == 0, f"Error, --num-samples-by-id must be a multiple of --batch"
     assert os.path.isdir(args.path_dataset), f"Error, no such dir: \'{args.path_dataset}\'"
-    if args.path_subj_list: assert os.path.isfile(args.path_subj_list), f"Error, no such file: \'{args.path_subj_list}\'"
 
     if not args.path_output:
         args.path_output = f"{args.path_dataset}_newSynthIDs_Arc2Face_sim={args.similarity_range}".replace(' ','')
@@ -289,22 +310,20 @@ if __name__ == '__main__':
     pipeline = get_arc2face_model()
     fr_model = get_face_recognition_model()
 
-    if args.path_subj_list:
-        json_subjs_list = load_json(args.path_subj_list)
-        subjs_orig_paths = [subj_path[0][0] for subj_path in json_subjs_list.values()]
-        subjs_names = [subj_name.split('/')[-2] for subj_name in subjs_orig_paths]
-    else:
-        subjs_orig_paths = get_immediate_subdirs(args.path_dataset)
-        subjs_names = [subj_name.split('/')[-1] for subj_name in subjs_orig_paths]
+    subjs_orig_paths = get_immediate_subdirs(args.path_dataset)
+    subjs_names = [subj_name.split('/')[-1] for subj_name in subjs_orig_paths]
 
     if args.num_new_ids == 0:
         print('\n--num-new-ids == 0, no new synthetic identities will be generated!')
         sys.exit(0)
+    elif args.num_new_ids < 0:
+        args.path_output += f'_{len(subjs_names)}ids'
     elif args.num_new_ids > 0:
         random.seed(440)
         random.shuffle(subjs_names)
         subjs_names = subjs_names[:args.num_new_ids]
-        args.path_output += f'_{args.num_new_ids}ids_KNN_BASED'
+        args.path_output += f'_{args.num_new_ids}ids'
+    args.path_output += f'_KNN_BASED'
     print(f'Creating output folder: \'{args.path_output}\'')
     os.makedirs(args.path_output, exist_ok=True)
 
@@ -314,9 +333,8 @@ if __name__ == '__main__':
     dataset_all_embedds_file_name = f"{args.path_dataset.split('/')[-1]}.pkl"
     dataset_all_embedds_file_path = os.path.join(args.path_output, dataset_all_embedds_file_name)
     if not os.path.isfile(dataset_all_embedds_file_path):
-        '''
         print(f"Searching embeddings in \'{args.path_dataset}\'")
-        embedds_paths, embedds_classes_str, embedds_classes_int = get_all_files_paths_with_dir_classes(args.input_path, file_extension=args.input_ext)
+        embedds_paths, embedds_classes_str, embedds_classes_int = get_all_files_paths_with_dir_classes(args.path_dataset, file_extension=args.input_ext)
         # print('embedds_classes_str:', embedds_classes_str)
         # print('embedds_classes_int:', embedds_classes_int)
         # sys.exit(0)
@@ -328,20 +346,41 @@ if __name__ == '__main__':
 
         print(f'Saving all embeddings paths: \'{dataset_all_embedds_file_path}\'')
         save_dict_to_pickle(dict_dataset_all_embedds, dataset_all_embedds_file_path)
-        '''
-        raise Exception(f'Unified file not found: \'{dataset_all_embedds_file_path}\'')
     else:
         print(f'Loading all embeddings paths: \'{dataset_all_embedds_file_path}\'')
         dict_dataset_all_embedds = load_dict_from_pickle(dataset_all_embedds_file_path)
         embedds_paths       = dict_dataset_all_embedds['embedds_paths']
         embedds_classes_str = dict_dataset_all_embedds['embedds_classes_str']
         embedds_classes_int = dict_dataset_all_embedds['embedds_classes_int']
-        embedds_feats       = dict_dataset_all_embedds['embedds_feats']
     print('len(embedds_paths):', len(embedds_paths))
-    print('embedds_feats.shape:', embedds_feats.shape)
-    print('type(embedds_feats):', type(embedds_feats))
     print('type(embedds_classes_str):', type(embedds_classes_str))
     print('type(embedds_classes_int):', type(embedds_classes_int))
+    print(f'------------------')
+
+
+
+    if not 'embedds_feats' in dict_dataset_all_embedds:
+        one_embedd = load_embedding(embedds_paths[0])
+        print('one_embedd.shape:', one_embedd.shape)
+        shape_embedds_feats = (len(embedds_paths), one_embedd.shape[0] if len(one_embedd.shape)==1 else one_embedd.shape[1])
+        print('Allocating matrix:', shape_embedds_feats)
+        embedds_feats = np.zeros(shape_embedds_feats, dtype=float)
+        print('Done!')
+
+        for idx_embedd, path_embedd in enumerate(embedds_paths):
+            start_time = time.time()
+            print(f'{idx_embedd}/{len(embedds_paths)} - Loading embedding \'{path_embedd}\'', end='\r')
+            one_embedd = load_embedding(path_embedd)
+            # one_embedd = one_embedd.cpu().detach().numpy()
+            embedds_feats[idx_embedd] = one_embedd
+        print()
+        dict_dataset_all_embedds['embedds_feats'] = embedds_feats
+        print(f'Saving all embeddings features: \'{dataset_all_embedds_file_path}\'')
+        save_dict_to_pickle(dict_dataset_all_embedds, dataset_all_embedds_file_path)
+    else:
+        print(f'Loading all embeddings features: \'{dataset_all_embedds_file_path}\'')
+        embedds_feats = dict_dataset_all_embedds['embedds_feats']
+    print('embedds_feats.shape:', embedds_feats.shape)
     print(f'------------------')
 
 
@@ -376,6 +415,12 @@ if __name__ == '__main__':
         sim_matrix                   = dict_dataset_all_embedds['sim_matrix']
     print(f'------------------')
 
+
+
+    path_output_knn = os.path.join(args.path_output, f'k={args.k}')
+    print(f'Creating knn output folder: \'{path_output_knn}\'')
+    os.makedirs(path_output_knn, exist_ok=True)
+
     print('Computing sums of similarities...')
     k = args.k
     k_sim_sums = np.sort(sim_matrix, axis=1)[:, -(k+1):-1].sum(axis=1)
@@ -387,12 +432,11 @@ if __name__ == '__main__':
     # sys.exit(0)
     print(f'------------------')
 
-
     all_new_embedds = torch.zeros_like(torch.tensor(embedds_centroids), dtype=torch.float16)
     all_new_embedds_labels_int = []
     all_new_embedds_labels_str = []
     all_similarities = torch.empty((len(all_new_embedds,)), dtype=torch.float32)
-    for idx_subj, _ in enumerate(embedds_centroids_labels_str):
+    for idx_subj, _ in enumerate(isolated_indices):
         target_idx = isolated_indices[idx_subj]
         print(f'{idx_subj}/{len(isolated_indices)} - subj \'{embedds_centroids_labels_str[target_idx]}\' - Computing void direction vectors', end='\r')
         # print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors',)
@@ -449,7 +493,7 @@ if __name__ == '__main__':
     prefix_output_filename = 'INTERCLASS_SIMILARITIES'
     title = f"dataset \'{args.dataset_name}\' - {len(embedds_centroids)} subjects"
     chart_file_name = f'{prefix_output_filename}_histograms_distances_between_samples_k={args.k}.png'
-    chart_file_path = os.path.join(args.path_output, chart_file_name)
+    chart_file_path = os.path.join(path_output_knn,chart_file_name)
     print(f'Saving histogram: \'{chart_file_path}\'')
     save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, chart_file_path, title)
     print('----------')
@@ -469,7 +513,7 @@ if __name__ == '__main__':
         # print('new_id_emb.norm():', torch.norm(new_id_emb))
 
         # Generate images:
-        print(f'id {idx_subj}/{len(subjs_names)} - subj \'{subj_name}\' - Generating {args.num_samples_by_id} new images...')
+        print(f'id {idx_subj}/{len(all_new_embedds_labels_str)} - subj \'{subj_name}\' - Generating {args.num_samples_by_id} new images...')
         new_id_emb_proj = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
         # print('new_id_emb_proj.shape:', new_id_emb_proj.shape)
         # print('new_id_emb_proj.norm():', torch.norm(new_id_emb_proj))
@@ -482,7 +526,7 @@ if __name__ == '__main__':
             all_generated_images.extend(images)
 
         path_dir_subj = os.path.join(args.path_dataset, subj_name)
-        output_folder = f"{os.path.join(args.path_output,f'imgs_steps={args.num_inference_steps}',path_dir_subj.split('/')[-1])}_newId_sim={all_similarities[idx_subj]}"
+        output_folder = f"{os.path.join(path_output_knn,f'imgs_steps={args.num_inference_steps}',path_dir_subj.split('/')[-1])}_newId_sim={all_similarities[idx_subj]}"
         os.makedirs(output_folder, exist_ok=True)
         for i, img in enumerate(all_generated_images):
             output_img_name = os.path.splitext(os.path.basename(path_dir_subj))[0]
