@@ -18,6 +18,7 @@ ENV_NAME=arc2face_py310
 conda create --name $ENV_NAME python=3.10 --yes
 conda activate $ENV_NAME
 pip install -r requirements_bjgbiesseck.txt
+conda install -c nvidia cudnn
 
 ```
 
