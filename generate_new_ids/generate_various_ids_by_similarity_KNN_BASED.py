@@ -1,6 +1,6 @@
 '''
 cd generate_new_ids
-python generate_various_ids_by_similarity.py --path-dataset /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS --path-subj-list /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json --similarity-range [0.5,0.69] --num-samples-by-id 50
+python generate_various_ids_by_similarity.py --path-dataset /nobackup3/bjgbiesseck/CASIA-Webface/imgs_crops_112x112_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace --path-subj-list /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json --similarity-range [0.5,0.69] --num-samples-by-id 50
 '''
 
 
@@ -432,12 +432,14 @@ if __name__ == '__main__':
     # sys.exit(0)
     print(f'------------------')
 
+
+    # Compute new embeddings
     all_new_embedds = torch.zeros_like(torch.tensor(embedds_centroids), dtype=torch.float16)
     all_new_embedds_labels_int = []
     all_new_embedds_labels_str = []
     all_similarities = torch.empty((len(all_new_embedds,)), dtype=torch.float32)
-    for idx_subj, _ in enumerate(isolated_indices):
-        target_idx = isolated_indices[idx_subj]
+    for idx_subj, target_idx in enumerate(isolated_indices):
+        # target_idx = isolated_indices[idx_subj]
         print(f'{idx_subj}/{len(isolated_indices)} - subj \'{embedds_centroids_labels_str[target_idx]}\' - Computing void direction vectors', end='\r')
         # print(f'{idx_subj}/{len(embedds_centroids_labels_int)} - Computing void direction vectors',)
         all_new_embedds_labels_int.append(target_idx)
@@ -464,7 +466,6 @@ if __name__ == '__main__':
         # sys.exit(0)
 
         # print('----------')
-
     print()
     print('----------')
 
@@ -501,6 +502,7 @@ if __name__ == '__main__':
     # sys.exit(0)
 
 
+    # Generate images from the computed embeddings
     idx_end_subj = args.num_new_ids if args.num_new_ids > 0 else len(all_new_embedds_labels_str)
     all_new_embedds_labels_str = all_new_embedds_labels_str[:idx_end_subj]
     for idx_subj, subj_name in enumerate(all_new_embedds_labels_str):
