@@ -196,7 +196,7 @@ def rotate_embedding_by_cosine_similarity(v1: torch.Tensor, void_vector: torch.T
     if v1.dim() != 1 or v1.size(0) != 512:
         raise ValueError("Input tensor must be 512-dimensional (1D tensor).")
     
-    theta = torch.acos(torch.tensor(cosine_similarity, device=v1.device))
+    theta = torch.acos(cosine_similarity)
     
     if torch.isclose(theta, torch.tensor(0.0).to(torch.float32)):
         return v1.clone()
@@ -262,6 +262,21 @@ def find_tangent_void_direction(target_centroid, neighbor_centroids):
     return void_vector
 
 
+def compute_similarities_histogram(all_similarities):
+    nbins = 20
+    lower, higher = 0.0, 1.0
+    bins_edges = np.linspace(lower, higher, nbins+1)
+    total_counts = np.zeros(nbins, dtype=np.int64)
+    bins_counts, _ = np.histogram(all_similarities, bins=bins_edges, range=(lower,higher))
+    total_counts += bins_counts
+    bins_widths = np.diff(bins_edges)
+    n_in_range = total_counts.sum()
+    # print('(n_in_range * bins_widths):', (n_in_range * bins_widths))
+    density = total_counts / (n_in_range * bins_widths)
+    # print('total_counts.sum():', total_counts.sum())
+    pmf = total_counts / total_counts.sum()
+    return bins_edges, pmf, bins_widths
+
 
 def save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, filename, title):
     plt.bar(bins_edges[:-1], pmf, width=bins_widths, align="edge", edgecolor='black', alpha=0.7, label='All dists')
@@ -273,7 +288,8 @@ def save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, filename, title):
     plt.legend()
 
     plt.xlim([0, 1])
-    # plt.ylim([0, 0.5])
+    
+    # plt.ylim([0, 0.0001])
     plt.ylim([0, 1.0])
 
     # Save the plot as PNG
@@ -283,11 +299,16 @@ def save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, filename, title):
     filename_svg = f_name + '.svg'
     plt.savefig(filename_svg)
 
+    plt.clf()
 
 
-def flat_array_remove_invalid_values(array, invalid_value=-1):
-    iu = np.triu_indices(array.shape[0], k=1)
-    flat_array = array[iu]
+
+def flat_array_remove_invalid_values(array, invalid_value=-1, upper_triang=True):
+    if upper_triang:
+        iu = np.triu_indices(n=array.shape[0], k=1, m=array.shape[1])
+        flat_array = array[iu]
+    else:
+        flat_array = array.flatten()
     valid_values = flat_array[flat_array != invalid_value]
     valid_values = np.clip(valid_values, 0.0, 1.0)
     return valid_values
@@ -416,6 +437,10 @@ if __name__ == '__main__':
     print(f'------------------')
 
 
+    idx_end_subj = args.num_new_ids if args.num_new_ids > 0 else len(embedds_centroids)
+    # idx_end_subj = len(embedds_centroids)
+
+
 
     path_output_knn = os.path.join(args.path_output, f'k={args.k}')
     print(f'Creating knn output folder: \'{path_output_knn}\'')
@@ -426,11 +451,13 @@ if __name__ == '__main__':
     k_sim_sums = np.sort(sim_matrix, axis=1)[:, -(k+1):-1].sum(axis=1)
     print('k_sim_sums', k_sim_sums)
     print('k_sim_sums.shape:', k_sim_sums.shape)
-    isolated_indices = np.argsort(k_sim_sums)
+    # isolated_indices = np.argsort(k_sim_sums)
+    isolated_indices = np.argsort(k_sim_sums)[:idx_end_subj]
     print('isolated_indices:', isolated_indices)
     print('isolated_indices.shape:', isolated_indices.shape)
     # sys.exit(0)
     print(f'------------------')
+
 
 
     # Compute new embeddings
@@ -438,6 +465,7 @@ if __name__ == '__main__':
     all_new_embedds_labels_int = []
     all_new_embedds_labels_str = []
     all_similarities = torch.empty((len(all_new_embedds,)), dtype=torch.float32)
+    all_similarities_new_id_emb_to_k_neighbor_centroids = np.empty((idx_end_subj, k+1), dtype=np.float32)
     for idx_subj, target_idx in enumerate(isolated_indices):
         # target_idx = isolated_indices[idx_subj]
         print(f'{idx_subj}/{len(isolated_indices)} - subj \'{embedds_centroids_labels_str[target_idx]}\' - Computing void direction vectors', end='\r')
@@ -465,45 +493,97 @@ if __name__ == '__main__':
         # print('all_new_embedds:', all_new_embedds)
         # sys.exit(0)
 
+        sim_matrix_new_id_emb_to_k_neighbor_centroids = cosine_similarity(new_id_emb, np.vstack((target_centroid,neighbor_centroids)))
+        all_similarities_new_id_emb_to_k_neighbor_centroids[idx_subj] = sim_matrix_new_id_emb_to_k_neighbor_centroids
+        # print('\nsim_matrix_new_id_emb_to_k_neighbor_centroids:', sim_matrix_new_id_emb_to_k_neighbor_centroids)
+        # print('sim_matrix_new_id_emb_to_k_neighbor_centroids.shape:', sim_matrix_new_id_emb_to_k_neighbor_centroids.shape)
+        # print('sim_matrix_new_id_emb_to_k_neighbor_centroids.dtype:', sim_matrix_new_id_emb_to_k_neighbor_centroids.dtype)
+        # sys.exit(0)
+
         # print('----------')
-    print()
     print('----------')
+    print('Computing cosine similarity matrix between new synthetic embedds and their k neighbors...')
+    # print('    all_similarities_new_id_emb_to_k_neighbor_centroids:', all_similarities_new_id_emb_to_k_neighbor_centroids)
+    print('    all_similarities_new_id_emb_to_k_neighbor_centroids.shape:', all_similarities_new_id_emb_to_k_neighbor_centroids.shape)
+    unique_sim_matrix_new_id_emb_to_k_neighbor_centroids = flat_array_remove_invalid_values(all_similarities_new_id_emb_to_k_neighbor_centroids, invalid_value=-1, upper_triang=False)
+    bins_edges, pmf, bins_widths = compute_similarities_histogram(unique_sim_matrix_new_id_emb_to_k_neighbor_centroids)
+    print('    pmf:', pmf)
 
-
-    print('Computing cosine similarity matrix between new embedds...')
-    sim_matrix_all_new_embedds = cosine_similarity(all_new_embedds)
-    unique_sim_matrix_all_new_embedds = flat_array_remove_invalid_values(sim_matrix_all_new_embedds, invalid_value=-1)
-    print('    unique_sim_matrix_all_new_embedds:', unique_sim_matrix_all_new_embedds)
-    print('    unique_sim_matrix_all_new_embedds.shape:', unique_sim_matrix_all_new_embedds.shape)
-
-
-    nbins = 20
-    lower, higher = 0.0, 1.0
-    bins_edges = np.linspace(lower, higher, nbins+1)
-    total_counts = np.zeros(nbins, dtype=np.int64)
-    bins_counts, _ = np.histogram(unique_sim_matrix_all_new_embedds, bins=bins_edges, range=(lower,higher))
-    total_counts += bins_counts
-    
-    bins_widths = np.diff(bins_edges)
-    n_in_range = total_counts.sum()
-    print('(n_in_range * bins_widths):', (n_in_range * bins_widths))
-    density = total_counts / (n_in_range * bins_widths)
-    print('total_counts.sum():', total_counts.sum())
-    pmf = total_counts / total_counts.sum()
-
-    prefix_output_filename = 'INTERCLASS_SIMILARITIES'
+    prefix_output_filename = 'INTERCLASS_SIMILARITIES_SYNTH_TO_THEIR_K-NEAREST-NEIGHBORS'
     title = f"dataset \'{args.dataset_name}\' - {len(embedds_centroids)} subjects"
     chart_file_name = f'{prefix_output_filename}_histograms_distances_between_samples_k={args.k}.png'
     chart_file_path = os.path.join(path_output_knn,chart_file_name)
     print(f'Saving histogram: \'{chart_file_path}\'')
     save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, chart_file_path, title)
+    print()
+
+
+
+
+    print('Computing cosine similarity matrix between new synthetic embedds...')
+    sim_matrix_all_new_embedds = cosine_similarity(all_new_embedds[:idx_end_subj])
+    print('    sim_matrix_all_new_embedds.shape:', sim_matrix_all_new_embedds.shape)
+    unique_sim_matrix_all_new_embedds = flat_array_remove_invalid_values(sim_matrix_all_new_embedds, invalid_value=-1)
+    print('    unique_sim_matrix_all_new_embedds:', unique_sim_matrix_all_new_embedds)
+    print('    unique_sim_matrix_all_new_embedds.shape:', unique_sim_matrix_all_new_embedds.shape)
+    bins_edges, pmf, bins_widths = compute_similarities_histogram(unique_sim_matrix_all_new_embedds)
+    print('    pmf:', pmf)
+
+    prefix_output_filename = 'INTERCLASS_SIMILARITIES_SYNTH_TO_SYNTH_THEMSELVES'
+    title = f"dataset \'{args.dataset_name}\' - {len(embedds_centroids)} subjects"
+    chart_file_name = f'{prefix_output_filename}_histograms_distances_between_samples_k={args.k}.png'
+    chart_file_path = os.path.join(path_output_knn,chart_file_name)
+    print(f'Saving histogram: \'{chart_file_path}\'')
+    save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, chart_file_path, title)
+    print()
+
+
+
+    print('Computing cosine similarity matrix between new synthetic embedds and real embeddings...')
+    sim_matrix_all_new_embedds_to_real_embedds = cosine_similarity(all_new_embedds[:idx_end_subj], centroids_norm)
+    print('    sim_matrix_all_new_embedds_to_real_embedds.shape:', sim_matrix_all_new_embedds_to_real_embedds.shape)
+    unique_sim_matrix_all_new_embedds_to_real_embedds = flat_array_remove_invalid_values(sim_matrix_all_new_embedds_to_real_embedds, invalid_value=-1, upper_triang=False)
+    print('    unique_sim_matrix_all_new_embedds_to_real_embedds:', unique_sim_matrix_all_new_embedds_to_real_embedds)
+    print('    unique_sim_matrix_all_new_embedds_to_real_embedds.shape:', unique_sim_matrix_all_new_embedds_to_real_embedds.shape)
+    bins_edges, pmf, bins_widths = compute_similarities_histogram(unique_sim_matrix_all_new_embedds_to_real_embedds)
+    print('    pmf:', pmf)
+
+    prefix_output_filename = 'INTERCLASS_SIMILARITIES_SYNTH_TO_REAL'
+    title = f"dataset \'{args.dataset_name}\' - {len(embedds_centroids)} subjects"
+    chart_file_name = f'{prefix_output_filename}_histograms_distances_between_samples_k={args.k}.png'
+    chart_file_path = os.path.join(path_output_knn,chart_file_name)
+    print(f'Saving histogram: \'{chart_file_path}\'')
+    save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, chart_file_path, title)
+    print()
+
+
+
+    print('Computing cosine similarity matrix between ALL synthetic embedds and ALL real embeddings...')
+    centroids_norm_with_new_embedds = np.vstack((centroids_norm, all_new_embedds[:idx_end_subj]))
+    print('    centroids_norm_with_new_embedds.shape:', centroids_norm_with_new_embedds.shape)
+    sim_matrix_centroids_norm_with_new_embedds = cosine_similarity(centroids_norm_with_new_embedds)
+    print('    sim_matrix_centroids_norm_with_new_embedds.shape:', sim_matrix_centroids_norm_with_new_embedds.shape)
+    unique_sim_matrix_centroids_norm_with_new_embedds = flat_array_remove_invalid_values(sim_matrix_centroids_norm_with_new_embedds, invalid_value=-1)
+    print('    unique_sim_matrix_centroids_norm_with_new_embedds:', unique_sim_matrix_centroids_norm_with_new_embedds)
+    print('    unique_sim_matrix_centroids_norm_with_new_embedds.shape:', unique_sim_matrix_centroids_norm_with_new_embedds.shape)
+    bins_edges, pmf, bins_widths = compute_similarities_histogram(unique_sim_matrix_centroids_norm_with_new_embedds)
+    print('    pmf:', pmf)
+
+    prefix_output_filename = 'INTERCLASS_SIMILARITIES_ALL'
+    title = f"dataset \'{args.dataset_name}\' - {len(embedds_centroids)} subjects"
+    chart_file_name = f'{prefix_output_filename}_histograms_distances_between_samples_k={args.k}.png'
+    chart_file_path = os.path.join(path_output_knn,chart_file_name)
+    print(f'Saving histogram: \'{chart_file_path}\'')
+    save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, chart_file_path, title)
+
     print('----------')
 
-    # sys.exit(0)
+
+    sys.exit(0)
 
 
     # Generate images from the computed embeddings
-    idx_end_subj = args.num_new_ids if args.num_new_ids > 0 else len(all_new_embedds_labels_str)
+    # idx_end_subj = args.num_new_ids if args.num_new_ids > 0 else len(all_new_embedds_labels_str)
     all_new_embedds_labels_str = all_new_embedds_labels_str[:idx_end_subj]
     for idx_subj, subj_name in enumerate(all_new_embedds_labels_str):
         start_time = time.time()
