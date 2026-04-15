@@ -16,7 +16,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='')
     # parser.add_argument('--network', type=str, default='r100', help='backbone network')
     parser.add_argument('--weights', type=str, default='../models/antelopev2/arcface.onnx')
-    parser.add_argument('--imgs', type=str, default='/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112')
+    parser.add_argument('--imgs', type=str, default='/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112')
     parser.add_argument('--output-path', type=str, default='')
     parser.add_argument('--start-idx', type=int, default=0)
     args = parser.parse_args()
