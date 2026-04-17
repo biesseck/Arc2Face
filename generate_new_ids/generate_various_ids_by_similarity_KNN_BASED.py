@@ -268,6 +268,8 @@ def compute_similarities_histogram(all_similarities):
     bins_edges = np.linspace(lower, higher, nbins+1)
     total_counts = np.zeros(nbins, dtype=np.int64)
     bins_counts, _ = np.histogram(all_similarities, bins=bins_edges, range=(lower,higher))
+    print('bins_edges:', bins_edges)
+    print('bins_counts:', bins_counts)
     total_counts += bins_counts
     bins_widths = np.diff(bins_edges)
     n_in_range = total_counts.sum()
@@ -437,6 +439,7 @@ if __name__ == '__main__':
     print(f'------------------')
 
 
+
     idx_end_subj = args.num_new_ids if args.num_new_ids > 0 else len(embedds_centroids)
     # idx_end_subj = len(embedds_centroids)
 
@@ -445,6 +448,25 @@ if __name__ == '__main__':
     path_output_knn = os.path.join(args.path_output, f'k={args.k}')
     print(f'Creating knn output folder: \'{path_output_knn}\'')
     os.makedirs(path_output_knn, exist_ok=True)
+
+
+
+    print(f'------------------')
+    print('Computing cosine similarity matrix between original real identities...')
+    # print('    sim_matrix:', sim_matrix)
+    print('    sim_matrix.shape:', sim_matrix.shape)
+    unique_sim_matrix_original_dataset = flat_array_remove_invalid_values(sim_matrix, invalid_value=-1)
+    bins_edges, pmf, bins_widths = compute_similarities_histogram(unique_sim_matrix_original_dataset)
+    print('    pmf:', pmf)
+    prefix_output_filename = 'INTERCLASS_SIMILARITIES_ORIGINAL_REAL_IDENTITIES'
+    title = f"dataset \'{args.dataset_name}\' - {len(embedds_centroids)} subjects"
+    chart_file_name = f'{prefix_output_filename}_histograms_distances_between_original_real_identities.png'
+    chart_file_path = os.path.join(path_output_knn,chart_file_name)
+    print(f'Saving histogram: \'{chart_file_path}\'')
+    save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, chart_file_path, title)
+    print(f'------------------')
+
+
 
     print('Computing sums of similarities...')
     k = args.k
@@ -466,6 +488,7 @@ if __name__ == '__main__':
     all_new_embedds_labels_str = []
     all_similarities = torch.empty((len(all_new_embedds,)), dtype=torch.float32)
     all_similarities_new_id_emb_to_k_neighbor_centroids = np.empty((idx_end_subj, k+1), dtype=np.float32)
+    print()
     for idx_subj, target_idx in enumerate(isolated_indices):
         # target_idx = isolated_indices[idx_subj]
         print(f'{idx_subj}/{len(isolated_indices)} - subj \'{embedds_centroids_labels_str[target_idx]}\' - Computing void direction vectors', end='\r')
