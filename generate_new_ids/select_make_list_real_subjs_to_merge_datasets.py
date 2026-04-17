@@ -242,7 +242,7 @@ def plot_two_sets_images(images_person1, images_person2, similarity, save_path='
     plt.close(fig)
 
 
-def make_save_figures_selected_and_existing_identities(dict_paths_new_subjs_base_subjs, path_output_figures_ids_folder, split_str='_FACE_EMBEDDINGS/'):
+def make_save_figures_selected_and_existing_identities(dict_paths_new_subjs_base_subjs, path_output_figures_ids_folder, split_str='_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace/'):
     img_exts = ['.jpg','.jpeg','.png']
     for idx_key_new_subj, (key_new_subj, base_subj_list_of_list) in enumerate(dict_paths_new_subjs_base_subjs.items()):
         path_dir_new_subj  = os.path.join(key_new_subj.split(split_str)[0], key_new_subj.split('/')[-2])
@@ -348,7 +348,7 @@ def main(args):
     path_output_figures_ids_folder = os.path.join(path_output_folder, output_figures_ids_folder_name)
     print(f"\nSaving faces figures - path_output_figures_ids_folder: \'{path_output_figures_ids_folder}\'")
     os.makedirs(path_output_figures_ids_folder, exist_ok=True)
-    make_save_figures_selected_and_existing_identities(dict_paths_new_subjs_base_subjs, path_output_figures_ids_folder, split_str='_FACE_EMBEDDINGS/')
+    make_save_figures_selected_and_existing_identities(dict_paths_new_subjs_base_subjs, path_output_figures_ids_folder, split_str='_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace/')
 
 
     print('\nFinished!\n')
