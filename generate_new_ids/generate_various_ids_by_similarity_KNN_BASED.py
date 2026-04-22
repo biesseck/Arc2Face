@@ -1,6 +1,6 @@
 '''
 cd generate_new_ids
-python generate_various_ids_by_similarity.py --path-dataset /nobackup3/bjgbiesseck/CASIA-Webface/imgs_crops_112x112_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace --path-subj-list /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json --similarity-range [0.5,0.69] --num-samples-by-id 50
+python generate_various_ids_by_similarity_KNN_BASED.py --path-dataset /nobackup3/bjgbiesseck/CASIA-Webface/imgs_crops_112x112_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace --path-subj-list /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/merge_with_dataset_MS-Celeb-1M-ms1m-retinaface-t1-imgs_FACE_EMBEDDINGS_sim-range=[0.5,0.69]/dict_paths_new_subjs_base_subjs.json --similarity-range [0.5,0.69] --num-samples-by-id 50
 '''
 
 
@@ -602,7 +602,7 @@ if __name__ == '__main__':
     print('----------')
 
 
-    sys.exit(0)
+    # sys.exit(0)
 
 
     # Generate images from the computed embeddings
