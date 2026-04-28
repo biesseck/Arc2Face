@@ -220,9 +220,9 @@ if __name__ == '__main__':
     num_runs = int(args.num_samples_by_id / args.batch)
     all_generated_images = []
     for idx_run in range(num_runs):
-            print(f'    run {idx_run}/{num_runs}')
-            images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.batch).images
-            all_generated_images.extend(images)
+        print(f'    run {idx_run}/{num_runs}')
+        images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.batch).images
+        all_generated_images.extend(images)
 
 
     if os.path.isfile(args.path_input):
