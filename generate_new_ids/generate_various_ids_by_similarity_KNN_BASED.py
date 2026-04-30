@@ -47,9 +47,13 @@ def parse_arguments():
     parser.add_argument("--num-samples-by-id",   type=int, default=50)
     parser.add_argument("--batch",               type=int, default=25)
     parser.add_argument("--num-inference-steps", type=int, default=25)
-    parser.add_argument("--k",                   type=int, default=5)
+    parser.add_argument("--k",                   type=int, default=3)
     parser.add_argument("--path-output",         type=str, default="")
     parser.add_argument('--dataset_name',        default='New Synthetic Subjects', type=str, help='')
+    
+    parser.add_argument("--divs",                type=int, default=1)
+    parser.add_argument("--part",                type=int, default=0)
+
     args = parser.parse_args()
     return args
 
@@ -316,6 +320,25 @@ def flat_array_remove_invalid_values(array, invalid_value=-1, upper_triang=True)
     return valid_values
 
 
+def get_division_indices(length_array, num_parts=1):
+    if num_parts < 1:
+        raise ValueError("num_parts must be at least 1")
+
+    avg = length_array // num_parts
+    remainder = length_array % num_parts
+    idxs_begin = []
+    idxs_end = []
+    current_idx = 0
+
+    for i in range(num_parts):
+        start = current_idx
+        end = start + avg + (1 if i < remainder else 0)
+        idxs_begin.append(start)
+        idxs_end.append(end)
+        current_idx = end
+
+    return idxs_begin, idxs_end
+
 
 if __name__ == '__main__':
 
@@ -323,6 +346,8 @@ if __name__ == '__main__':
     assert args.num_samples_by_id >= args.batch, f"Error, --num-samples-by-id must be greater or equal to --batch"
     assert args.num_samples_by_id % args.batch == 0, f"Error, --num-samples-by-id must be a multiple of --batch"
     assert os.path.isdir(args.path_dataset), f"Error, no such dir: \'{args.path_dataset}\'"
+    assert args.part >= 0, f"Error, args.part ({args.part}) < 0"
+    assert args.part < args.divs, f"Error, args.part ({args.part}) > args.divs ({args.divs})"
 
     if not args.path_output:
         args.path_output = f"{args.path_dataset}_newSynthIDs_Arc2Face_sim={args.similarity_range}".replace(' ','')
@@ -452,7 +477,7 @@ if __name__ == '__main__':
 
 
     print(f'------------------')
-    print('Computing cosine similarity matrix between original real identities...')
+    print('Computing histogram of similarities between original real identities...')
     # print('    sim_matrix:', sim_matrix)
     print('    sim_matrix.shape:', sim_matrix.shape)
     unique_sim_matrix_original_dataset = flat_array_remove_invalid_values(sim_matrix, invalid_value=-1)
@@ -480,6 +505,11 @@ if __name__ == '__main__':
     # sys.exit(0)
     print(f'------------------')
 
+    idxs_begin, idxs_end = get_division_indices(len(isolated_indices), args.divs)
+    # print('idxs_begin:', idxs_begin)
+    # print('idxs_end:  ', idxs_end)
+    # sys.exit(0)
+    # isolated_indices = isolated_indices[idxs_begin[args.part]:idxs_end[args.part]]
 
 
     # Compute new embeddings
@@ -610,35 +640,38 @@ if __name__ == '__main__':
     all_new_embedds_labels_str = all_new_embedds_labels_str[:idx_end_subj]
     for idx_subj, subj_name in enumerate(all_new_embedds_labels_str):
         start_time = time.time()
+        if idx_subj>=idxs_begin[args.part] and idx_subj<idxs_end[args.part]:
+            new_id_emb = all_new_embedds[idx_subj,:].to("cuda")
+            new_id_emb = torch.unsqueeze(new_id_emb, 0)
+            new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
+            # print('new_id_emb.shape:', new_id_emb.shape)
+            # print('new_id_emb.norm():', torch.norm(new_id_emb))
 
-        new_id_emb = all_new_embedds[idx_subj,:].to("cuda")
-        new_id_emb = torch.unsqueeze(new_id_emb, 0)
-        new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
-        # print('new_id_emb.shape:', new_id_emb.shape)
-        # print('new_id_emb.norm():', torch.norm(new_id_emb))
+            # Generate images:
+            print(f'id {idx_subj}/{len(all_new_embedds_labels_str)} - subj \'{subj_name}\' - Generating {args.num_samples_by_id} new images...')
+            new_id_emb_proj = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
+            # print('new_id_emb_proj.shape:', new_id_emb_proj.shape)
+            # print('new_id_emb_proj.norm():', torch.norm(new_id_emb_proj))
+            
+            num_runs = int(args.num_samples_by_id / args.batch)
+            all_generated_images = []
+            for idx_run in range(num_runs):
+                print(f'    run {idx_run}/{num_runs}')
+                images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.batch).images
+                all_generated_images.extend(images)
 
-        # Generate images:
-        print(f'id {idx_subj}/{len(all_new_embedds_labels_str)} - subj \'{subj_name}\' - Generating {args.num_samples_by_id} new images...')
-        new_id_emb_proj = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
-        # print('new_id_emb_proj.shape:', new_id_emb_proj.shape)
-        # print('new_id_emb_proj.norm():', torch.norm(new_id_emb_proj))
-        
-        num_runs = int(args.num_samples_by_id / args.batch)
-        all_generated_images = []
-        for idx_run in range(num_runs):
-            print(f'    run {idx_run}/{num_runs}')
-            images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.batch).images
-            all_generated_images.extend(images)
-
-        path_dir_subj = os.path.join(args.path_dataset, subj_name)
-        output_folder = f"{os.path.join(path_output_knn,f'imgs_steps={args.num_inference_steps}',path_dir_subj.split('/')[-1])}_newId_sim={all_similarities[idx_subj]}"
-        os.makedirs(output_folder, exist_ok=True)
-        for i, img in enumerate(all_generated_images):
-            output_img_name = os.path.splitext(os.path.basename(path_dir_subj))[0]
-            path_output_img = os.path.join(output_folder, f"{output_img_name}_newID_newSample_{i}.png")
-            print(f"    Saving output img: \'{path_output_img}\'", end='\r')
-            img.save(path_output_img)
-        print()
+            path_dir_subj = os.path.join(args.path_dataset, subj_name)
+            output_folder = f"{os.path.join(path_output_knn,f'imgs_steps={args.num_inference_steps}',path_dir_subj.split('/')[-1])}_newId_sim={all_similarities[idx_subj]}"
+            os.makedirs(output_folder, exist_ok=True)
+            for i, img in enumerate(all_generated_images):
+                output_img_name = os.path.splitext(os.path.basename(path_dir_subj))[0]
+                path_output_img = os.path.join(output_folder, f"{output_img_name}_newID_newSample_{i}.png")
+                print(f"    Saving output img: \'{path_output_img}\'", end='\r')
+                img.save(path_output_img)
+            print()
+        else:
+            print(f'id {idx_subj}/{len(all_new_embedds_labels_str)} - subj \'{subj_name}\' - Skipping...')
+            
 
         exec_time = time.time() - start_time
         remain_time = exec_time * (len(all_new_embedds_labels_str)-idx_subj+1)
