@@ -29,11 +29,12 @@ def parse_list_arg(arg_string):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path-input",          type=str, default="/hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112/10232/481561.png")   # or /hddevice/nobackup3/bjgbiesseck/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS/10232/10232_mean_embedding_r100_arcface.npy
+    parser.add_argument("--subj-path",           type=str, default="/nobackup3/bjgbiesseck/CASIA-Webface/imgs_crops_112x112_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace/0")
     parser.add_argument("--similarity-range",    type=parse_list_arg, default=[0.5,0.69], required=True, help='A list of float values separated by commas, e.g., 0.5,0.69 or [0.5,0.69]')
     parser.add_argument("--num-samples-by-id",   type=int, default=10)
     parser.add_argument("--batch",               type=int, default=10)
     parser.add_argument("--num-inference-steps", type=int, default=25)
+    parser.add_argument("--output-path",         type=str, default="./output_transfer_style")
     args = parser.parse_args()
     return args
 
@@ -44,14 +45,15 @@ def natural_sort(l):
     return sorted(l, key=alphanum_key)
 
 
-def get_all_files_in_path(folder_path, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'], pattern=''):
+def get_all_files_in_path(folder_path, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'], pattern='', ignore_pattern=''):
     file_list = []
     for root, _, files in os.walk(folder_path):
         for filename in files:
             path_file = os.path.join(root, filename)
             for ext in file_extension:
                 if pattern in path_file and path_file.lower().endswith(ext.lower()):
-                    file_list.append(path_file)
+                    if not ignore_pattern or not ignore_pattern in path_file:
+                        file_list.append(path_file)
                     # print(f'Found files: {len(file_list)}', end='\r')
     # print()
     file_list = natural_sort(file_list)
@@ -166,29 +168,33 @@ if __name__ == '__main__':
     args = parse_arguments()
     assert args.num_samples_by_id >= args.batch, f"Error, --num-samples-by-id must be greater or equal to --batch"
     assert args.num_samples_by_id % args.batch == 0, f"Error, --num-samples-by-id must be a multiple of --batch"
-    assert os.path.isfile(args.path_input) or os.path.isdir(args.path_input), f"Error: no such file or dir \'{args.path_input}\'"
+    assert os.path.isfile(args.subj_path) or os.path.isdir(args.subj_path), f"Error: no such file or dir \'{args.subj_path}\'"
 
     pipeline = get_arc2face_model()
     det_fr_model = get_face_detection_and_recognition_model()
     fr_model = get_face_recognition_model()
 
-    if os.path.isfile(args.path_input):
-        if args.path_input.endswith('.npy') or args.path_input.endswith('.pt'):
-            src_id_emb = load_embedding(args.path_input)
+    if os.path.isfile(args.subj_path):
+        if args.subj_path.endswith('.npy') or args.subj_path.endswith('.pt'):
+            src_id_emb = load_embedding(args.subj_path)
         else:
-            img = np.array(Image.open(args.path_input))[:,:,::-1]
+            img = np.array(Image.open(args.subj_path))[:,:,::-1]
             if img.shape[0] == 112 and img.shape[1] == 112:   # face already aligned
                 src_id_emb = fr_model.get_feat(img)
             else:
                 faces = det_fr_model.get(img)   # detect face
                 if len(faces) == 0:   # no face detected
-                    raise Exception(f'No face detected in image: \'{args.path_input}\'')
+                    raise Exception(f'No face detected in image: \'{args.subj_path}\'')
                 faces = sorted(faces, key=lambda x:(x['bbox'][2]-x['bbox'][0])*(x['bbox'][3]-x['bbox'][1]))[-1]  # select largest face (if more than one detected)
                 src_id_emb = faces['embedding']
 
-    elif os.path.isdir(args.path_input):
-        paths_files = get_all_files_in_path(args.path_input, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'])
-        src_id_embedds = torch.zeros((len(paths_files), 512))
+    elif os.path.isdir(args.subj_path):
+        paths_files = get_all_files_in_path(args.subj_path, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'], ignore_pattern='_mean_embedding_')
+        # for path in paths_files:
+        #     print(path)
+        # print('len(paths_files):', len(paths_files))
+        # sys.exit(0)
+        src_id_embedds = torch.zeros((len(paths_files), 512), dtype=torch.float16, device='cuda:0')
         for idx_path, path_file in enumerate(paths_files):
             if path_file.endswith('.npy') or path_file.endswith('.pt'):
                 src_id_embedds[idx_path] = load_embedding(path_file)
@@ -211,30 +217,58 @@ if __name__ == '__main__':
     similarity = get_random_float(args.similarity_range)
     print('similarity:', similarity)
 
-    # Generate new identity embedding
     new_id_emb = rotate_embedding_by_cosine_similarity(src_id_emb, similarity)
-    new_id_emb = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
 
-    # Generate images:
-    print(f'Generating {args.num_samples_by_id} new images...')
-    new_id_emb_proj = project_face_embs(pipeline, new_id_emb)    # pass through the encoder
-    # images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
-    num_runs = int(args.num_samples_by_id / args.batch)
+
+    # ------------------------------------------------------------
+    
+    # Generate images without transfer style (default Arc2Face):
+    print(f'Generating {len(paths_files)} new images (default Arc2Face)...')
+    new_id_emb_normalized = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
+    new_id_emb_proj = project_face_embs(pipeline, new_id_emb_normalized)    # pass through the encoder
+    num_runs = int(len(paths_files) / args.batch)
     all_generated_images = []
     for idx_run in range(num_runs):
         print(f'    run {idx_run}/{num_runs}')
         images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=args.batch).images
         all_generated_images.extend(images)
 
-
-    if os.path.isfile(args.path_input):
-        output_folder = f"{os.path.splitext(args.path_input)[0]}_newId_sim={similarity}"
-    elif os.path.isdir(args.path_input):
-        output_folder = f"{os.path.join(args.path_input,args.path_input.split('/')[-1])}_avgEmbedd_newId_sim={similarity}"
+    output_folder = f"{os.path.join(args.output_path,args.subj_path.split('/')[-1])}_avgEmbedd_newId_sim={similarity}_defaultArc2Face"
     os.makedirs(output_folder, exist_ok=True)
     for i, img in enumerate(all_generated_images):
-        output_img_name = os.path.splitext(os.path.basename(args.path_input))[0]
+        output_img_name = os.path.splitext(os.path.basename(args.subj_path))[0]
         path_output_img = os.path.join(output_folder, f"{output_img_name}_newID_newSample_{i}.png")
-        print(f"Saving output img: \'{path_output_img}\'")
+        print(f"Saving output img: \'{path_output_img}\'", end='\r')
         img.save(path_output_img)
+    print()
+    
 
+    # ------------------------------------------------------------
+
+    # Transfer style face before generating face image
+    all_generated_images = []
+    print('\n---------------------------------')
+    print(f'Generating {len(paths_files)} new images by transfering face style...')
+    for idx_emb in range(len(paths_files)):
+        new_sample_emb = new_id_emb + src_id_embedds[idx_emb] - src_id_emb
+        new_sample_emb = new_sample_emb/torch.norm(new_sample_emb, dim=1, keepdim=True)   # normalize embedding
+
+        # Generate images:
+        print(f'{idx_emb}/{len(paths_files)} - Generating new image')
+        print('    new_sample_emb.shape:', new_sample_emb.shape, '    new_id_emb_proj.shape:', new_id_emb_proj.shape)
+        new_id_emb_proj = project_face_embs(pipeline, new_sample_emb)    # pass through the encoder
+        # images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples_by_id).images
+    
+        images = pipeline(prompt_embeds=new_id_emb_proj, num_inference_steps=args.num_inference_steps, guidance_scale=3.0, num_images_per_prompt=1).images
+        all_generated_images.extend(images)
+
+    output_folder = f"{os.path.join(args.output_path,args.subj_path.split('/')[-1])}_avgEmbedd_newId_sim={similarity}_transferStyle"
+    os.makedirs(output_folder, exist_ok=True)
+    for i, img in enumerate(all_generated_images):
+        output_img_name = os.path.splitext(os.path.basename(args.subj_path))[0]
+        path_output_img = os.path.join(output_folder, f"{output_img_name}_newID_newSample_{i}.png")
+        print(f"Saving output img: \'{path_output_img}\'", end='\r')
+        img.save(path_output_img)
+    print()
+
+    print('\nFinished!')

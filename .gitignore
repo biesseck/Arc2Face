@@ -8,3 +8,4 @@ generate_new_ids/*/*.npz
 generate_new_ids/*/*.vtk
 
 transfer_expression/*.png
+output_transfer_style*

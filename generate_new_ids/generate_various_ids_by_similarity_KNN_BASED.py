@@ -502,7 +502,7 @@ if __name__ == '__main__':
     isolated_indices = np.argsort(k_sim_sums)[:idx_end_subj]
     print('isolated_indices:', isolated_indices)
     print('isolated_indices.shape:', isolated_indices.shape)
-    # sys.exit(0)
+    sys.exit(0)
     print(f'------------------')
 
     idxs_begin, idxs_end = get_division_indices(len(isolated_indices), args.divs)
