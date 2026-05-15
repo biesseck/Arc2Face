@@ -17,6 +17,7 @@ cd Arc2Face
 ENV_NAME=arc2face_py310
 conda create --name $ENV_NAME python=3.10 --yes
 conda activate $ENV_NAME
+conda install -c nvidia cuda-toolkit=11.7 cudnn=9
 pip install -r requirements_bjgbiesseck.txt
 conda install -c nvidia cudnn
 
