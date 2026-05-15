@@ -1,7 +1,7 @@
 #### REQUIREMENTS:
  - Python 3.10
  - CUDA 11.7
- - cuDNN 8
+ - cuDNN 9
  - pytorch 2.0.1
 
 
