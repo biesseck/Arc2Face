@@ -638,6 +638,7 @@ if __name__ == '__main__':
     # Generate images from the computed embeddings
     # idx_end_subj = args.num_new_ids if args.num_new_ids > 0 else len(all_new_embedds_labels_str)
     all_new_embedds_labels_str = all_new_embedds_labels_str[:idx_end_subj]
+    total_time = 0.0
     for idx_subj, subj_name in enumerate(all_new_embedds_labels_str):
         start_time = time.time()
         if idx_subj>=idxs_begin[args.part] and idx_subj<idxs_end[args.part]:
@@ -674,8 +675,10 @@ if __name__ == '__main__':
             
 
         exec_time = time.time() - start_time
-        remain_time = exec_time * (len(all_new_embedds_labels_str)-idx_subj+1)
+        total_time += exec_time
+        remain_time = exec_time * ((idxs_end[args.part]-idxs_begin[args.part])-idx_subj+1)
         print('    Exec time: %.2fsec    %.2fmin    %.2fhour' % (exec_time, exec_time/60, exec_time/3600))
+        print('    Total time: %.2fsec    %.2fmin    %.2fhour' % (total_time, total_time/60, total_time/3600))
         print('    Remaining time: %.2fsec    %.2fmin    %.2fhour' % (remain_time, remain_time/60, remain_time/3600))
         print('------------')
 
