@@ -20,6 +20,7 @@ import json
 import pickle
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
+import csv
 
 
 from diffusers import (
@@ -632,6 +633,14 @@ if __name__ == '__main__':
     print('----------')
 
 
+    all_new_embedds_labels_csv_filename = 'new_embedds_labels.csv'
+    all_new_embedds_labels_csv_path = os.path.join(path_output_knn, all_new_embedds_labels_csv_filename)
+    with open(all_new_embedds_labels_csv_path, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        print(f'Saving CSV file with new embedds identities names \'{all_new_embedds_labels_csv_path}\'')
+        for item in all_new_embedds_labels_str:
+            writer.writerow([item])
+        print('----------')
     # sys.exit(0)
 
 
