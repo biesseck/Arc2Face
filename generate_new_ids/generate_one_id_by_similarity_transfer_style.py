@@ -124,7 +124,7 @@ def load_embedding(embedd_path='', device='cuda:0'):
 
 
 
-def rotate_embedding_by_cosine_similarity(v1: torch.Tensor, cosine_similarity: float) -> torch.Tensor:
+def rotate_embedding_by_cosine_similarity(v1: torch.Tensor, cosine_similarity: float, random_vector=None) -> torch.Tensor:
     v1 = torch.squeeze(v1)
     if not (0.0 <= cosine_similarity <= 1.0):
         raise ValueError("Cosine similarity must be between 0.0 and 1.0.")
@@ -142,7 +142,12 @@ def rotate_embedding_by_cosine_similarity(v1: torch.Tensor, cosine_similarity: f
         
     u1 = v1 / v1_norm
 
-    random_vector = torch.randn_like(v1)
+    if random_vector is None:
+        print('random_vector IS None')
+        random_vector = torch.randn_like(v1)
+    else:
+        print('random_vector ISN\'T None')
+        random_vector = torch.tensor(random_vector)
     
     projection_onto_u1 = torch.dot(random_vector, u1) * u1
     
@@ -157,8 +162,120 @@ def rotate_embedding_by_cosine_similarity(v1: torch.Tensor, cosine_similarity: f
     u1_prime = (u1 * torch.cos(theta)) + (u2 * torch.sin(theta))
     v1_prime = u1_prime * v1_norm
     v1_prime = torch.unsqueeze(v1_prime, 0)
-    return v1_prime
+    return v1_prime, random_vector
 
+
+
+def transfer_perturbation(e_u, e_i, f_u):
+    e_u = e_u / e_u.norm()
+    f_u = f_u / f_u.norm()
+    e_i = e_i / e_i.norm()
+
+    perturbation_ortho = e_i - torch.dot(e_i.flatten(), e_u.flatten()) * e_u
+    f_i_unnorm = f_u + perturbation_ortho
+    return f_i_unnorm
+
+
+
+def transport_perturbation(e_u, e_i, f_u, v_random, cosine_similarity):
+    """
+    Transports perturbation while strictly preserving the geodesic distance 
+    (angular norm) between the identity anchor and the sample.
+    """
+    # 1. Measure the exact angular distance (phi) of the original perturbation
+    # Cosine similarity between sample and its mean identity
+    cos_phi = torch.clamp(torch.dot(e_i.flatten(), e_u.flatten()), -1.0, 1.0)
+    phi = torch.acos(cos_phi) # This is the "true" magnitude of change
+    
+    # If there's virtually no perturbation, return the target identity directly
+    if phi < 1e-7:
+        return f_u.clone()
+        
+    # 2. Isolate the direction of the original perturbation orthogonal to e_u
+    p_dir = e_i - cos_phi * e_u
+    p_dir = p_dir / p_dir.norm()
+    
+    # 3. Decompose p_dir relative to your rotation plane (e_u, v_random)
+    dot_v = torch.dot(p_dir.flatten(), v_random.flatten())
+    
+    # Extract out-of-plane directional component
+    p_dir_ortho = p_dir - (torch.dot(p_dir.flatten(), e_u.flatten()) * e_u) - (dot_v * v_random)
+    
+    # 4. Rotate the in-plane direction component by theta
+    theta_rad = torch.acos(torch.tensor(cosine_similarity, device=e_u.device))
+    v_rotated = -torch.sin(theta_rad) * e_u + torch.cos(theta_rad) * v_random
+    
+    # 5. Reconstruct the transported direction vector on the target identity f_u
+    # (Note: dot_eu for p_dir is 0 by construction, so we only transport dot_v)
+    p_dir_transported = (dot_v * v_rotated) + p_dir_ortho
+    p_dir_transported = p_dir_transported / p_dir_transported.norm()
+    
+    # 6. Generate the final synthetic embedding using Spherical Linear Interpolation (Slerp)
+    # This guarantees f_i is perfectly on the sphere *without* post-normalization shrinkage
+    f_i = torch.cos(phi) * f_u + torch.sin(phi) * p_dir_transported
+    
+    return f_i
+
+
+
+def parallel_transport_spherical_clean(e_u, e_i, f_u):
+    """
+    Transports the sample embedding e_i from the source identity e_u 
+    to the target identity f_u along the unique geodesic path connecting them.
+    
+    Guarantees: cossim(f_i, f_u) == cossim(e_i, e_u)
+    """
+    # 1. Enforce strict unit norm (Hypersphere mapping)
+    e_u = e_u / e_u.norm()
+    f_u = f_u / f_u.norm()
+    e_i = e_i / e_i.norm()
+    
+    # 2. Compute the cosine similarity and angle (phi) of the original sample
+    cos_phi = torch.clamp(torch.dot(e_i.flatten(), e_u.flatten()), -1.0, 1.0)
+    phi = torch.acos(cos_phi)
+    
+    if phi < 1e-7:
+        return f_u.clone()  # No variation to transport
+        
+    # 3. Isolate the directional component of the perturbation orthogonal to e_u
+    p_dir = e_i - cos_phi * e_u
+    p_dir = p_dir / p_dir.norm()
+    
+    # 4. Construct the parallel transport matrix/mechanism from e_u to f_u
+    # We find the part of p_dir that lies in the plane spanned by e_u and f_u
+    cos_theta = torch.clamp(torch.dot(e_u.flatten(), f_u.flatten()), -1.0, 1.0)
+    
+    # If identities are identical or opposites, rotation plane collapses
+    if abs(cos_theta) > 0.99999:
+        # Just apply the original orthogonal direction directly onto f_u
+        f_i = torch.cos(phi) * f_u + torch.sin(phi) * p_dir
+        return f_i / f_i.norm()
+        
+    # Define the orthonormal basis for the identity-rotation plane
+    u1 = e_u
+    u2 = f_u - cos_theta * e_u
+    u2 = u2 / u2.norm()
+    
+    # 5. Project the perturbation direction onto this identity-rotation plane
+    proj_u1 = torch.dot(p_dir.flatten(), u1.flatten())
+    proj_u2 = torch.dot(p_dir.flatten(), u2.flatten())
+    
+    # Isolate the component completely outside the identity-rotation plane
+    p_dir_orthogonal = p_dir - (proj_u1 * u1) - (proj_u2 * u2)
+    
+    # 6. Transport the in-plane components to the new identity frame
+    # u1 maps to f_u, u2 maps to the orthogonal vector to f_u within the same plane
+    u2_transported = -torch.sqrt(1.0 - cos_theta**2) * e_u + cos_theta * u2
+    u2_transported = u2_transported / u2_transported.norm()
+    
+    p_dir_transported = (proj_u1 * f_u) + (proj_u2 * u2_transported) + p_dir_orthogonal
+    p_dir_transported = p_dir_transported / p_dir_transported.norm()
+    
+    # 7. Reconstruct on the target sphere surface using SLERP rules
+    f_i = torch.cos(phi) * f_u + torch.sin(phi) * p_dir_transported
+    
+    # Final clamp normalization to defeat float16/float32 rounding errors
+    return f_i / f_i.norm()
 
 
 
@@ -217,11 +334,11 @@ if __name__ == '__main__':
     similarity = get_random_float(args.similarity_range)
     print('similarity:', similarity)
 
-    new_id_emb = rotate_embedding_by_cosine_similarity(src_id_emb, similarity)
+    new_id_emb, random_vector = rotate_embedding_by_cosine_similarity(src_id_emb, similarity)
 
 
     # ------------------------------------------------------------
-    
+
     # Generate images without transfer style (default Arc2Face):
     print(f'Generating {len(paths_files)} new images (default Arc2Face)...')
     new_id_emb_normalized = new_id_emb/torch.norm(new_id_emb, dim=1, keepdim=True)   # normalize embedding
@@ -241,7 +358,7 @@ if __name__ == '__main__':
         print(f"Saving output img: \'{path_output_img}\'", end='\r')
         img.save(path_output_img)
     print()
-    
+
 
     # ------------------------------------------------------------
 
@@ -250,8 +367,20 @@ if __name__ == '__main__':
     print('\n---------------------------------')
     print(f'Generating {len(paths_files)} new images by transfering face style...')
     for idx_emb in range(len(paths_files)):
-        new_sample_emb = new_id_emb + src_id_embedds[idx_emb] - src_id_emb
+        # new_sample_emb = new_id_emb + src_id_embedds[idx_emb] - src_id_emb
+        # new_sample_emb = transfer_perturbation(src_id_emb, src_id_embedds[idx_emb], new_id_emb)
+        # new_sample_emb = transport_perturbation(src_id_emb, src_id_embedds[idx_emb], new_id_emb, random_vector, similarity)
+        new_sample_emb = parallel_transport_spherical_clean(src_id_emb, src_id_embedds[idx_emb], new_id_emb)
+        # new_sample_emb, _ = rotate_embedding_by_cosine_similarity(src_id_embedds[idx_emb], similarity, random_vector)
+        # new_sample_emb = torch.unsqueeze(src_id_embedds[idx_emb], dim=0)
+
         new_sample_emb = new_sample_emb/torch.norm(new_sample_emb, dim=1, keepdim=True)   # normalize embedding
+
+        print('torch.norm(src_id_embedds[idx_emb]-src_id_emb):', torch.norm(src_id_embedds[idx_emb]-src_id_emb))
+        print('    sim:', torch.nn.functional.cosine_similarity(src_id_embedds[idx_emb], src_id_emb))
+        print('torch.norm(new_sample_emb-new_id_emb)         :', torch.norm(new_sample_emb-new_id_emb))
+        print('    sim:', torch.nn.functional.cosine_similarity(new_sample_emb, new_id_emb))
+        
 
         # Generate images:
         print(f'{idx_emb}/{len(paths_files)} - Generating new image')
