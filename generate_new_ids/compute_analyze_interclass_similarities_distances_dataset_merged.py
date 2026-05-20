@@ -43,6 +43,33 @@ def load_json(path):
     return data
 
 
+def save_dict(data: dict, filename: str) -> None:
+    serializable_data = {}
+    for key, value in data.items():
+        if isinstance(value, torch.Tensor):
+            serializable_data[key] = value.detach().cpu().numpy()
+        else:
+            serializable_data[key] = value
+    
+    with open(filename, "wb") as f:
+        pickle.dump(serializable_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def load_dict(filename: str) -> dict:
+    with open(filename, "rb") as f:
+        data = pickle.load(f)
+    restored_data = {}
+    for key, value in data.items():
+        if isinstance(value, np.ndarray):
+            try:
+                restored_data[key] = torch.from_numpy(value)
+            except Exception:
+                restored_data[key] = value
+        else:
+            restored_data[key] = value
+    return restored_data
+
+
 def get_parts_indices(sub_folders, divisions):
     begin_div = []
     end_div = []
@@ -197,9 +224,9 @@ def compute_histogram(metrics, nbins=20, lower=0.0, higher=1.0):
     return hist_computed_data
 
 
-def save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, filename, title):
+def save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, filename, title, color='blue'):
     plt.cla()
-    plt.bar(bins_edges[:-1], pmf, width=bins_widths, align="edge", edgecolor='black', alpha=0.7, label='All dists')
+    plt.bar(bins_edges[:-1], pmf, width=bins_widths, align="edge", color=color, edgecolor='black', alpha=0.7, label='All similarities')
     
     # Add title, labels, and legend
     plt.title(title)
@@ -225,8 +252,10 @@ def main(args):
     assert os.path.isfile(args.other_dataset_subjs_list_path), f'Error, no such file \'{args.other_dataset_subjs_list_path}\''
 
     dataset_path = args.input_path.rstrip('/')
-    output_path = f'{dataset_path}_INTERCLASS_SIMILARITIES_TO_OTHER_MERGED_DATASET_{args.metric}'
+    output_path = f"{dataset_path}_INTERCLASS_SIMILARITIES_{args.metric}_{os.path.dirname(args.other_dataset_subjs_list_path).split('/')[-1]}"
+    path_precomputed_data = os.path.join(output_path, f'precomputed_data_{os.path.basename(dataset_path)}.pkl')
     os.makedirs(output_path, exist_ok=True)
+
 
     print('dataset_path:', dataset_path)
     print('Searching subject subfolders...')
@@ -234,54 +263,6 @@ def main(args):
     subjects_paths = get_leaf_subdirs(dataset_path)
     # print('subjects_paths:', subjects_paths)
     print(f'Found {len(subjects_paths)} subjects!')
-
-    begin_parts, end_parts = get_parts_indices(subjects_paths, args.divs)
-    idx_subj_begin, idx_subj_end = begin_parts[args.part], end_parts[args.part]
-    num_subjs_part = idx_subj_end - idx_subj_begin 
-    print('\nbegin_parts:', begin_parts)
-    print('end_parts:  ', end_parts)
-    print(f'idx_subj_begin: {idx_subj_begin}    idx_subj_end: {idx_subj_end}')
-    print('')
-    # sub_folders = subjects_paths[begin_parts[args.part]:end_parts[args.part]]
-
-
-
-    # Load 1 sample to get its size
-    sample_path = find_files_by_extension(subjects_paths[0], args.mean_embedd_str, args.file_ext, ignore_file_with='')
-    assert len(sample_path) > 0, f'Error, no such file with substr \'{args.mean_embedd_str}\' and ext \'{args.file_ext}\' in dir \'{subjects_paths[0]}\''
-    assert len(sample_path) < 2, f'Error, more than 1 file with substr \'{args.mean_embedd_str}\' and ext \'{args.file_ext}\' in dir \'{subjects_paths[0]}\': {sample_path}'
-    sample_path = sample_path[0]
-    data = load_sample(sample_path)
-    # print('data.shape:', data.shape, '    torch.squeeze(data).shape[0]:', torch.squeeze(data).shape[0])
-    # sys.exit(0)
-
-    print('Loading subjects mean embeddings of base dataset...')
-    subj_mean_embedds = torch.zeros((len(subjects_paths), torch.squeeze(data).shape[0]), dtype=data.dtype)
-    # print('subj_mean_embedds.shape:', subj_mean_embedds.shape, '    subj_mean_embedds.dtype:', subj_mean_embedds.dtype)
-    # sys.exit(0)
-    for idx_subj, subj_path in enumerate(subjects_paths):
-        print(f'{idx_subj}/{len(subjects_paths)} - Loading subject mean embedding in \'{subj_path}\'', end='\r')
-        ignore_file_with = ''
-        samples_paths = find_files_by_extension(subj_path, args.mean_embedd_str, args.file_ext, ignore_file_with)
-        assert len(samples_paths) > 0, f'Error, no such file with substr \'{args.mean_embedd_str}\' and ext \'{args.file_ext}\' in dir \'{subj_path}\''
-        assert len(samples_paths) < 2, f'Error, more than 1 file with substr \'{args.mean_embedd_str}\' and ext \'{args.file_ext}\' in dir \'{subj_path}\': {samples_paths}'
-        # print('samples_paths:', samples_paths)
-        # print('len(samples_paths):', len(samples_paths))
-        # sys.exit(0)
-
-        for idx_sf, sample_path in enumerate(samples_paths):
-            # print(f'Loading samples - {idx_sf}/{len(samples_paths)}...', end='\r')
-            data = load_sample(sample_path)
-            # print('data.shape:', data.shape, '    type(data):', type(data), '    device:', {data.device})
-            subj_mean_embedds[idx_subj] = data
-        # print('')
-        # print('subj_mean_embedds:', subj_mean_embedds)
-        # print('len(loaded_samples):', len(loaded_samples))
-        # sys.exit(0)
-    print('')
-    print(f'    subj_mean_embedds.shape: {subj_mean_embedds.shape}    dtype: {subj_mean_embedds.dtype}    device: {subj_mean_embedds.device}')
-    # sys.exit(0)
-
 
 
     print()
@@ -295,121 +276,150 @@ def main(args):
     # print('other_dataset_subjs_paths:', other_dataset_subjs_paths)
     # sys.exit(0)
 
-    data = load_sample(other_dataset_subjs_paths[0])
-    other_dataset_subj_mean_embedds = torch.zeros((len(other_dataset_subjs_paths), torch.squeeze(data).shape[0]), dtype=data.dtype)
-    print('Loading other dataset mean embeddings')
-    for idx_other_subj, other_subj_path in enumerate(other_dataset_subjs_paths):
-        print(f'{idx_other_subj}/{len(other_dataset_subjs_paths)} - Loading subject mean embedding in \'{other_subj_path}\'', end='\r')
-        data = load_sample(other_subj_path)
-        # print('data.shape:', data.shape, '    type(data):', type(data), '    device:', {data.device})
-        other_dataset_subj_mean_embedds[idx_other_subj] = data
-    print('')
-    print(f'    other_dataset_subj_mean_embedds.shape: {other_dataset_subj_mean_embedds.shape}    dtype: {other_dataset_subj_mean_embedds.dtype}    device: {other_dataset_subj_mean_embedds.device}')
-    # sys.exit(0)
+
+    if args.compute_from_scratch or not os.path.isfile(path_precomputed_data):
+        begin_parts, end_parts = get_parts_indices(subjects_paths, args.divs)
+        idx_subj_begin, idx_subj_end = begin_parts[args.part], end_parts[args.part]
+        num_subjs_part = idx_subj_end - idx_subj_begin 
+        print('\nbegin_parts:', begin_parts)
+        print('end_parts:  ', end_parts)
+        print(f'idx_subj_begin: {idx_subj_begin}    idx_subj_end: {idx_subj_end}')
+        print('')
+        # sub_folders = subjects_paths[begin_parts[args.part]:end_parts[args.part]]
 
 
-
-    # num_subjs_to_compare = -1       # ALL SIMILARITIES
-    # # num_subjs_to_compare = 10     # sampling
-
-    # if num_subjs_to_compare < 0:    # ALL SIMILARITIES
-    #     num_total_similarities = int(((subj_mean_embedds.shape[0]-1 + 1)*(subj_mean_embedds.shape[0]-1)) / 2)
-    # else:
-    #     num_total_similarities = int(subj_mean_embedds.shape[0] * num_subjs_to_compare)
-
-    # print(f'\nAllocating similarities tensor of shape ({num_total_similarities},)')
-    # all_interclass_similarities = torch.zeros((num_total_similarities,), dtype=subj_mean_embedds.dtype)
-    # print('    all_interclass_similarities.shape:', all_interclass_similarities.shape, '    dtype:', all_interclass_similarities.dtype, '    device:', all_interclass_similarities.device)
-    # sys.exit(0)
-
-    print()
-    # start_idx_all_sims = 0
-    # total_spent_time = 0.0
-    # num_computed_similarities = 0
-    all_subj_similarities_list = [None] * len(subjects_paths[:-1])
-    print('Computing base dataset inner interclass similarities')
-    for idx_subj, subj_path in enumerate(subjects_paths[:-1]):
-        # subj_start_time = time.time()
-        # print('------------------')
-        
-        subj_mean_embedd = subj_mean_embedds[idx_subj]
-        # print('    subj_mean_embedd.shape:', subj_mean_embedd.shape, '    dtype:', subj_mean_embedd.dtype, '    device:', subj_mean_embedd.device)
-        other_subj_mean_embedd = subj_mean_embedds[idx_subj+1:]
-        # print('    other_subj_mean_embedd.shape:', other_subj_mean_embedd.shape, '    dtype:', other_subj_mean_embedd.dtype, '    device:', other_subj_mean_embedd.device)
-
-        subj_similarities = compute_cosine_similarity_1_to_N(subj_mean_embedd, other_subj_mean_embedd)
-        print(f'    idx_subj {idx_subj}/{len(subjects_paths[:-1])} - subj_similarities.shape: {subj_similarities.shape}', end='\r')
-
-        # print('    subj_similarities:', subj_similarities)
-        # print('    subj_similarities.shape:', subj_similarities.shape)
-        # num_computed_similarities += subj_similarities.shape[0]
-        # print('    num_computed_similarities:', num_computed_similarities)
-
-        all_subj_similarities_list[idx_subj] = subj_similarities
-
-        # subj_output_dir_path = subj_path.replace(dataset_path, output_path)
-        # # print('    subj_output_dir_path:', subj_output_dir_path)
-        # os.makedirs(subj_output_dir_path, exist_ok=True)
-        # subj_output_file_path = os.path.join(subj_output_dir_path, f'interclass_similarities_{args.metric}.pt')
-        # print(f'    Saving similarities: \'{subj_output_file_path}\'')
-        # torch.save(subj_similarities, subj_output_file_path)
-
-        # subj_elapsed_time = (time.time() - subj_start_time)
-        # avg_sim_elapsed_time = subj_elapsed_time / float(subj_similarities.shape[0])
-        # total_spent_time += subj_elapsed_time
-        # est_time_to_complete = avg_sim_elapsed_time * (num_total_similarities - num_computed_similarities)
-        # print('        subj_elapsed_time: %.2f sec' % (subj_elapsed_time))
-        # print('        avg_sim_elapsed_time: %f sec' % (avg_sim_elapsed_time))
-        # print(f'        num_computed_similarities: {num_computed_similarities}/{num_total_similarities} ({((num_computed_similarities/num_total_similarities)*100):.2f}%)')
-        # print('        Total spent time: %.2fsec, %.2fmin, %.2fhour' % (total_spent_time, total_spent_time/60.0, total_spent_time/3600.0))
-        # print('        Estimate time to complete: %.2fsec, %.2fmin, %.2fhour' % (est_time_to_complete, est_time_to_complete/60.0, est_time_to_complete/3600.0))
-
+        # Load 1 sample to get its size
+        sample_path = find_files_by_extension(subjects_paths[0], args.mean_embedd_str, args.file_ext, ignore_file_with='')
+        assert len(sample_path) > 0, f'Error, no such file with substr \'{args.mean_embedd_str}\' and ext \'{args.file_ext}\' in dir \'{subjects_paths[0]}\''
+        assert len(sample_path) < 2, f'Error, more than 1 file with substr \'{args.mean_embedd_str}\' and ext \'{args.file_ext}\' in dir \'{subjects_paths[0]}\': {sample_path}'
+        sample_path = sample_path[0]
+        data = load_sample(sample_path)
+        # print('data.shape:', data.shape, '    torch.squeeze(data).shape[0]:', torch.squeeze(data).shape[0])
         # sys.exit(0)
-    print()
-    all_subj_similarities_concat = np.concatenate(all_subj_similarities_list)
-    print(f'Flatting array and removing invalid values')
-    all_subj_similarities_concat = flat_array_remove_invalid_values(all_subj_similarities_concat, invalid_value=-1)
-    print(f'all_subj_similarities_concat.shape: {all_subj_similarities_concat.shape}\n')
+
+        print('Loading subjects mean embeddings of base dataset...')
+        subj_mean_embedds = torch.zeros((len(subjects_paths), torch.squeeze(data).shape[0]), dtype=data.dtype)
+        # print('subj_mean_embedds.shape:', subj_mean_embedds.shape, '    subj_mean_embedds.dtype:', subj_mean_embedds.dtype)
+        # sys.exit(0)
+        for idx_subj, subj_path in enumerate(subjects_paths):
+            print(f'{idx_subj}/{len(subjects_paths)} - Loading subject mean embedding in \'{subj_path}\'', end='\r')
+            ignore_file_with = ''
+            samples_paths = find_files_by_extension(subj_path, args.mean_embedd_str, args.file_ext, ignore_file_with)
+            assert len(samples_paths) > 0, f'Error, no such file with substr \'{args.mean_embedd_str}\' and ext \'{args.file_ext}\' in dir \'{subj_path}\''
+            assert len(samples_paths) < 2, f'Error, more than 1 file with substr \'{args.mean_embedd_str}\' and ext \'{args.file_ext}\' in dir \'{subj_path}\': {samples_paths}'
+            # print('samples_paths:', samples_paths)
+            # print('len(samples_paths):', len(samples_paths))
+            # sys.exit(0)
+
+            for idx_sf, sample_path in enumerate(samples_paths):
+                # print(f'Loading samples - {idx_sf}/{len(samples_paths)}...', end='\r')
+                data = load_sample(sample_path)
+                # print('data.shape:', data.shape, '    type(data):', type(data), '    device:', {data.device})
+                subj_mean_embedds[idx_subj] = data
+            # print('')
+            # print('subj_mean_embedds:', subj_mean_embedds)
+            # print('len(loaded_samples):', len(loaded_samples))
+            # sys.exit(0)
+        print('')
+        print(f'    subj_mean_embedds.shape: {subj_mean_embedds.shape}    dtype: {subj_mean_embedds.dtype}    device: {subj_mean_embedds.device}')
+        # sys.exit(0)
 
 
 
-    all_other_dataset_subj_similarities_list = [None] * len(other_dataset_subj_mean_embedds[:-1])
-    print('Computing other dataset inner interclass similarities')
-    for idx_subj, subj_mean_embedd in enumerate(other_dataset_subj_mean_embedds[:-1]):
-        other_subj_mean_embedd = other_dataset_subj_mean_embedds[idx_subj+1:]
-        subj_similarities = compute_cosine_similarity_1_to_N(subj_mean_embedd, other_subj_mean_embedd)
-        print(f'    idx_subj {idx_subj}/{len(other_dataset_subj_mean_embedds[:-1])} - subj_similarities.shape: {subj_similarities.shape}', end='\r')
-        all_other_dataset_subj_similarities_list[idx_subj] = subj_similarities
-    print()
-    all_other_dataset_subj_similarities_concat = np.concatenate(all_other_dataset_subj_similarities_list)
-    print(f'Flatting array and removing invalid values')
-    all_other_dataset_subj_similarities_concat = flat_array_remove_invalid_values(all_other_dataset_subj_similarities_concat, invalid_value=-1)
-    print(f'all_other_dataset_subj_similarities_concat.shape: {all_other_dataset_subj_similarities_concat.shape}\n')
+        print()
+        data = load_sample(other_dataset_subjs_paths[0])
+        other_dataset_subj_mean_embedds = torch.zeros((len(other_dataset_subjs_paths), torch.squeeze(data).shape[0]), dtype=data.dtype)
+        print('Loading other dataset mean embeddings')
+        for idx_other_subj, other_subj_path in enumerate(other_dataset_subjs_paths):
+            print(f'{idx_other_subj}/{len(other_dataset_subjs_paths)} - Loading subject mean embedding in \'{other_subj_path}\'', end='\r')
+            data = load_sample(other_subj_path)
+            # print('data.shape:', data.shape, '    type(data):', type(data), '    device:', {data.device})
+            other_dataset_subj_mean_embedds[idx_other_subj] = data
+        print('')
+        print(f'    other_dataset_subj_mean_embedds.shape: {other_dataset_subj_mean_embedds.shape}    dtype: {other_dataset_subj_mean_embedds.dtype}    device: {other_dataset_subj_mean_embedds.device}')
+        # sys.exit(0)
 
 
 
-    all_merged_datasets_outer_similarities_list = [None] * len(subj_mean_embedds)
-    print('Computing outer other dataset inner interclass similarities')
-    for idx_base_subj, base_subj_mean_embedd in enumerate(subj_mean_embedds):
-        similarities_base_subj_to_other_dataset = compute_cosine_similarity_1_to_N(base_subj_mean_embedd, other_dataset_subj_mean_embedds)
-        print(f'    idx_base_subj {idx_base_subj}/{len(subj_mean_embedds)} - subj_similarities.shape: {similarities_base_subj_to_other_dataset.shape}', end='\r')
-        all_merged_datasets_outer_similarities_list[idx_base_subj] = similarities_base_subj_to_other_dataset
-    print()
-    all_merged_datasets_outer_similarities_concat = np.concatenate(all_merged_datasets_outer_similarities_list)
-    print(f'Flatting array and removing invalid values')
-    all_merged_datasets_outer_similarities_concat = flat_array_remove_invalid_values(all_merged_datasets_outer_similarities_concat, invalid_value=-1)
-    print(f'all_merged_datasets_outer_similarities_concat.shape: {all_merged_datasets_outer_similarities_concat.shape}\n')
+        print()
+        all_subj_similarities_list = [None] * len(subjects_paths[:-1])
+        print('Computing base dataset inner interclass similarities')
+        for idx_subj, subj_path in enumerate(subjects_paths[:-1]):
+            subj_mean_embedd = subj_mean_embedds[idx_subj]
+            other_subj_mean_embedd = subj_mean_embedds[idx_subj+1:]
+            subj_similarities = compute_cosine_similarity_1_to_N(subj_mean_embedd, other_subj_mean_embedd)
+            print(f'    idx_subj {idx_subj}/{len(subjects_paths[:-1])} - subj_similarities.shape: {subj_similarities.shape}', end='\r')
+            all_subj_similarities_list[idx_subj] = subj_similarities
+        print()
+        all_subj_similarities_concat = np.concatenate(all_subj_similarities_list)
+        print(f'Flatting array and removing invalid values')
+        all_subj_similarities_concat = flat_array_remove_invalid_values(all_subj_similarities_concat, invalid_value=-1)
+        print(f'all_subj_similarities_concat.shape: {all_subj_similarities_concat.shape}\n')
+
+
+
+        all_other_dataset_subj_similarities_list = [None] * len(other_dataset_subj_mean_embedds[:-1])
+        print('Computing other dataset inner interclass similarities')
+        for idx_subj, subj_mean_embedd in enumerate(other_dataset_subj_mean_embedds[:-1]):
+            other_subj_mean_embedd = other_dataset_subj_mean_embedds[idx_subj+1:]
+            subj_similarities = compute_cosine_similarity_1_to_N(subj_mean_embedd, other_subj_mean_embedd)
+            print(f'    idx_subj {idx_subj}/{len(other_dataset_subj_mean_embedds[:-1])} - subj_similarities.shape: {subj_similarities.shape}', end='\r')
+            all_other_dataset_subj_similarities_list[idx_subj] = subj_similarities
+        print()
+        all_other_dataset_subj_similarities_concat = np.concatenate(all_other_dataset_subj_similarities_list)
+        print(f'Flatting array and removing invalid values')
+        all_other_dataset_subj_similarities_concat = flat_array_remove_invalid_values(all_other_dataset_subj_similarities_concat, invalid_value=-1)
+        print(f'all_other_dataset_subj_similarities_concat.shape: {all_other_dataset_subj_similarities_concat.shape}\n')
+
+
+
+        all_merged_datasets_outer_similarities_list = [None] * len(subj_mean_embedds)
+        print('Computing outer other dataset inner interclass similarities')
+        for idx_base_subj, base_subj_mean_embedd in enumerate(subj_mean_embedds):
+            similarities_base_subj_to_other_dataset = compute_cosine_similarity_1_to_N(base_subj_mean_embedd, other_dataset_subj_mean_embedds)
+            print(f'    idx_base_subj {idx_base_subj}/{len(subj_mean_embedds)} - subj_similarities.shape: {similarities_base_subj_to_other_dataset.shape}', end='\r')
+            all_merged_datasets_outer_similarities_list[idx_base_subj] = similarities_base_subj_to_other_dataset
+        print()
+        all_merged_datasets_outer_similarities_concat = np.concatenate(all_merged_datasets_outer_similarities_list)
+        print(f'Flatting array and removing invalid values')
+        all_merged_datasets_outer_similarities_concat = flat_array_remove_invalid_values(all_merged_datasets_outer_similarities_concat, invalid_value=-1)
+        print(f'all_merged_datasets_outer_similarities_concat.shape: {all_merged_datasets_outer_similarities_concat.shape}\n')
 
 
 
 
-    print('-------------------')
-    print('Computing metrics of base dataset inner interclass similarities')
-    metrics_base_dataset_inner_interclass_similarities    = compute_metrics_distances_subject(all_subj_similarities_concat)        
-    print('Computing metrics of other dataset inner interclass similarities')
-    metrics_other_dataset_inner_interclass_similarities   = compute_metrics_distances_subject(all_other_dataset_subj_similarities_concat)        
-    print('Computing metrics of outer interclass similarities between base and other dataset')
-    metrics_merged_datasets_outer_interclass_similarities = compute_metrics_distances_subject(all_merged_datasets_outer_similarities_concat)        
+        print('-------------------')
+        print('Computing metrics of base dataset inner interclass similarities')
+        metrics_base_dataset_inner_interclass_similarities    = compute_metrics_distances_subject(all_subj_similarities_concat)        
+        print('Computing metrics of other dataset inner interclass similarities')
+        metrics_other_dataset_inner_interclass_similarities   = compute_metrics_distances_subject(all_other_dataset_subj_similarities_concat)        
+        print('Computing metrics of outer interclass similarities between base and other dataset')
+        metrics_merged_datasets_outer_interclass_similarities = compute_metrics_distances_subject(all_merged_datasets_outer_similarities_concat)        
+
+
+        precomputed_data = {}
+        precomputed_data['metrics_base_dataset_inner_interclass_similarities']    = metrics_base_dataset_inner_interclass_similarities
+        precomputed_data['metrics_other_dataset_inner_interclass_similarities']   = metrics_other_dataset_inner_interclass_similarities
+        precomputed_data['metrics_merged_datasets_outer_interclass_similarities'] = metrics_merged_datasets_outer_interclass_similarities
+        # precomputed_data['hist_base_dataset_inner_interclass_similarities']       = hist_base_dataset_inner_interclass_similarities
+        # precomputed_data['hist_other_dataset_inner_interclass_similarities']      = hist_other_dataset_inner_interclass_similarities
+        # precomputed_data['hist_merged_datasets_outer_interclass_similarities']    = hist_merged_datasets_outer_interclass_similarities
+        print(f'\nSaving computed data: \'{path_precomputed_data}\'')
+        save_dict(precomputed_data, path_precomputed_data)
+        print('    Saved')
+
+
+    else:
+        print(f'\nLoading precomputed data: \'{path_precomputed_data}\'')
+        precomputed_data = load_dict(path_precomputed_data)
+        metrics_base_dataset_inner_interclass_similarities    = precomputed_data['metrics_base_dataset_inner_interclass_similarities']
+        metrics_other_dataset_inner_interclass_similarities   = precomputed_data['metrics_other_dataset_inner_interclass_similarities']
+        metrics_merged_datasets_outer_interclass_similarities = precomputed_data['metrics_merged_datasets_outer_interclass_similarities']
+        # hist_base_dataset_inner_interclass_similarities       = precomputed_data['hist_base_dataset_inner_interclass_similarities']
+        # hist_other_dataset_inner_interclass_similarities      = precomputed_data['hist_other_dataset_inner_interclass_similarities']
+        # hist_merged_datasets_outer_interclass_similarities    = precomputed_data['hist_merged_datasets_outer_interclass_similarities']
+        print('    Loaded')
+
 
     print()
     nbins = 20
@@ -425,37 +435,38 @@ def main(args):
     hist_merged_datasets_outer_interclass_similarities = compute_histogram(metrics_merged_datasets_outer_interclass_similarities, nbins, lower, higher)
     print("    hist_merged_datasets_outer_interclass_similarities['total_counts']:", hist_merged_datasets_outer_interclass_similarities['total_counts'])
     
-    
+        
+
+
     print()
     prefix_output_filename = 'INTERCLASS_SIMILARITIES'
 
-    title = f"Base dataset - {len(subj_mean_embedds)} subjects - {args.metric}"
+    title = f"Base dataset - {len(subjects_paths)} subjects - {args.metric}"
     chart_file_name = f'0_{prefix_output_filename}_base_dataset_histogram_inner_interclass_similarities_' + args.metric + '.png'
     chart_file_path = os.path.join(output_path, chart_file_name)
     print(f'Saving histogram: \'{chart_file_path}\'')
     save_bar_plot_from_histogram(hist_base_dataset_inner_interclass_similarities['bins_edges'],
                                  hist_base_dataset_inner_interclass_similarities['pmf'],
                                  hist_base_dataset_inner_interclass_similarities['bins_widths'],
-                                 chart_file_path, title)
+                                 chart_file_path, title, color='blue')
 
-    title = f"Other dataset - {len(other_dataset_subj_mean_embedds)} subjects - {args.metric}"
+    title = f"Other dataset - {len(other_dataset_subjs_paths)} subjects - {args.metric}"
     chart_file_name = f'1_{prefix_output_filename}_other_dataset_histogram_inner_interclass_similarities_' + args.metric + '.png'
     chart_file_path = os.path.join(output_path, chart_file_name)
     print(f'Saving histogram: \'{chart_file_path}\'')
     save_bar_plot_from_histogram(hist_other_dataset_inner_interclass_similarities['bins_edges'],
                                  hist_other_dataset_inner_interclass_similarities['pmf'],
                                  hist_other_dataset_inner_interclass_similarities['bins_widths'],
-                                 chart_file_path, title)
+                                 chart_file_path, title, color='orange')
 
-    title = f"Merged datasets - {len(subj_mean_embedds)} base subjects - {len(other_dataset_subj_mean_embedds)} other subjects - {args.metric}"
+    title = f"Merged datasets - {len(subjects_paths)} base subjects - {len(other_dataset_subjs_paths)} other subjects - {args.metric}"
     chart_file_name = f'2_{prefix_output_filename}_merged_datasets_histogram_outer_interclass_similarities_' + args.metric + '.png'
     chart_file_path = os.path.join(output_path, chart_file_name)
     print(f'Saving histogram: \'{chart_file_path}\'')
     save_bar_plot_from_histogram(hist_merged_datasets_outer_interclass_similarities['bins_edges'],
                                  hist_merged_datasets_outer_interclass_similarities['pmf'],
                                  hist_merged_datasets_outer_interclass_similarities['bins_widths'],
-                                 chart_file_path, title)
-
+                                 chart_file_path, title, color='green')
 
     print('\nFinished!')
 
@@ -475,10 +486,10 @@ if __name__ == "__main__":
     parser.add_argument('--part', default=0, type=int, help='Specific part to process (works only if -div > 1)')
 
     parser.add_argument('--metric', default='cosine_2d', type=str, help='Options: chamfer, cosine_3dmm, euclidean_3dmm, cosine_2d')
-    parser.add_argument('--file_ext', default='.npy', type=str, help='.ply, .obj, .npy')
-    parser.add_argument('--mean_embedd_str', default='mean_embedding', type=str, help='')
+    parser.add_argument('--file-ext', default='.npy', type=str, help='.ply, .obj, .npy')
+    parser.add_argument('--mean-embedd-str', default='mean_embedding', type=str, help='')
 
-    # parser.add_argument('--dont_replace_existing_files', action='store_true', help='')
+    parser.add_argument('--compute-from-scratch', action='store_true', help='')
 
     args = parser.parse_args()
 
