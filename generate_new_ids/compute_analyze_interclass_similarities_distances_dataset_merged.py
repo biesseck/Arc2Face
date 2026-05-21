@@ -11,6 +11,7 @@ import socket
 import time
 import pickle
 import json
+import re
 
 import numpy as np
 import torch
@@ -166,12 +167,20 @@ def find_files_by_extension(folder_path, target_file_substr, extension, ignore_f
     return sorted(matching_files)
 
 
+def natural_sort(l):
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(l, key=alphanum_key)
+
+
 def get_leaf_subdirs(base_path):
     base = Path(base_path)
-    return [
+    subdir_paths = [
         str(p) for p in base.rglob("*")
         if p.is_dir() and not any(child.is_dir() for child in p.iterdir())
     ]
+    subdir_paths = natural_sort(subdir_paths)
+    return subdir_paths
 
 
 def flat_array_remove_invalid_values(array, invalid_value=-1):
@@ -298,6 +307,7 @@ def main(args):
     subjects_paths = get_leaf_subdirs(dataset_path)
     # print('subjects_paths:', subjects_paths)
     print(f'Found {len(subjects_paths)} subjects!')
+    # sys.exit(0)
 
 
     print()
