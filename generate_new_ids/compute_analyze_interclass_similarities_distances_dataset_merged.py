@@ -290,6 +290,21 @@ def save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, total_counts, fil
     plt.savefig(filename_svg)
 
 
+def get_dict_subject_pairs_by_similarity(all_subj_similarities_list, sims=np.arange(0, 1.1, 0.1), subjects1_labels_str=[], subjects2_labels_str=[]):
+    dict_subjs_pairs_similarities = {str([sim1,sim2]): [] for sim1, sim2 in zip(sims[:-1],sims[1:])}
+    for idx_subj, subj_similarities in enumerate(all_subj_similarities_list):
+        # print(f'    idx_subj {idx_subj}    subj_similarities.shape:', subj_similarities.shape, '    len(subjects1_labels_str):', len(subjects1_labels_str), '    len(subjects2_labels_str):', len(subjects2_labels_str))
+        for sim1, sim2 in zip(sims[:-1],sims[1:]):
+            inds_sims = np.where((subj_similarities >= sim1) & (subj_similarities < sim2))[0]
+            if len(subj_similarities) > 0:
+                if subjects1_labels_str == subjects2_labels_str:
+                    inds_sims += idx_subj+1
+                for idx_subj2 in inds_sims:
+                    dict_subjs_pairs_similarities[str([sim1,sim2])].append(str([subjects1_labels_str[idx_subj],subjects2_labels_str[idx_subj2]]))
+    return dict_subjs_pairs_similarities
+
+
+
 
 def main(args):
     assert args.part < args.divs, f'Error, args.part ({args.part}) >= args.divs ({args.divs}), but should be args.part ({args.part}) < args.divs ({args.divs})'
@@ -301,28 +316,32 @@ def main(args):
     os.makedirs(output_path, exist_ok=True)
 
 
-    print('dataset_path:', dataset_path)
-    print('Searching subject subfolders...')
-    # subjects_paths = sorted([os.path.join(dataset_path,subj) for subj in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, subj))])
-    subjects_paths = get_leaf_subdirs(dataset_path)
-    # print('subjects_paths:', subjects_paths)
-    print(f'Found {len(subjects_paths)} subjects!')
-    # sys.exit(0)
-
-
-    print()
-    print(f'Loading other dataset subjects list: \'{args.other_dataset_subjs_list_path}\'')
-    other_dataset_subjs_list_dict = load_json(args.other_dataset_subjs_list_path)
-    first_other_subj_path = list(other_dataset_subjs_list_dict.keys())[0]
-    assert os.path.isfile(first_other_subj_path), f'Error, no such file \'{first_other_subj_path}\''
-    other_dataset_subjs_paths = [k for k in list(other_dataset_subjs_list_dict.keys())]
-    # print('other_dataset_subjs_list_dict.keys():', other_dataset_subjs_list_dict.keys())
-    # print('len(other_dataset_subjs_list_dict):', len(other_dataset_subjs_list_dict))
-    # print('other_dataset_subjs_paths:', other_dataset_subjs_paths)
-    # sys.exit(0)
-
-
     if args.compute_from_scratch or not os.path.isfile(path_precomputed_data):
+        print('dataset_path:', dataset_path)
+        print('Searching subject subfolders...')
+        # subjects_paths = sorted([os.path.join(dataset_path,subj) for subj in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, subj))])
+        subjects_paths = get_leaf_subdirs(dataset_path)
+        subjects_labels_str = [subj_path.split('/')[-1] for subj_path in subjects_paths]
+        # print('subjects_paths:', subjects_paths)
+        print(f'Found {len(subjects_paths)} subjects!')
+        # sys.exit(0)
+
+
+        print()
+        print(f'Loading other dataset subjects list: \'{args.other_dataset_subjs_list_path}\'')
+        other_dataset_subjs_list_dict = load_json(args.other_dataset_subjs_list_path)
+        first_other_subj_path = list(other_dataset_subjs_list_dict.keys())[0]
+        assert os.path.isfile(first_other_subj_path), f'Error, no such file \'{first_other_subj_path}\''
+        other_dataset_subjs_paths = [k for k in list(other_dataset_subjs_list_dict.keys())]
+        other_dataset_subjs_labels_str = [other_subj_path.split('/')[-2] for other_subj_path in other_dataset_subjs_paths]
+        # print('other_dataset_subjs_list_dict.keys():', other_dataset_subjs_list_dict.keys())
+        # print('len(other_dataset_subjs_list_dict):', len(other_dataset_subjs_list_dict))
+        # print('other_dataset_subjs_paths:', other_dataset_subjs_paths)
+        # print('other_dataset_subjs_labels_str:', other_dataset_subjs_labels_str)
+        # print('len(other_dataset_subjs_labels_str):', len(other_dataset_subjs_labels_str))
+        # sys.exit(0)
+
+
         begin_parts, end_parts = get_parts_indices(subjects_paths, args.divs)
         idx_subj_begin, idx_subj_end = begin_parts[args.part], end_parts[args.part]
         num_subjs_part = idx_subj_end - idx_subj_begin 
@@ -370,7 +389,6 @@ def main(args):
         # sys.exit(0)
 
 
-
         print()
         data = load_sample(other_dataset_subjs_paths[0])
         other_dataset_subj_mean_embedds = torch.zeros((len(other_dataset_subjs_paths), torch.squeeze(data).shape[0]), dtype=data.dtype)
@@ -385,6 +403,8 @@ def main(args):
         # sys.exit(0)
 
 
+        # ----------------------------------
+        # COMPUTE SIMILARITIES
 
         print()
         all_subj_similarities_list = [None] * len(subjects_paths[:-1])
@@ -400,6 +420,12 @@ def main(args):
         print(f'Flatting array and removing invalid values')
         all_subj_similarities_concat = flat_array_remove_invalid_values(all_subj_similarities_concat, invalid_value=-1)
         print(f'all_subj_similarities_concat.shape: {all_subj_similarities_concat.shape}\n')
+        sims_ranges = np.arange(0.4, 1.1, 0.1)
+        dict_base_dataset_subjs_pairs_similarities = get_dict_subject_pairs_by_similarity(all_subj_similarities_list, sims_ranges, subjects_labels_str, subjects_labels_str)
+        path_base_dataset_dict_subjs_pairs_similarities = os.path.join(output_path, f'base_dataset_pairs_by_similarities.json')
+        print(f'Saving base dataset pairs by similarities: \'{path_base_dataset_dict_subjs_pairs_similarities}\'')
+        save_json(dict_base_dataset_subjs_pairs_similarities, path_base_dataset_dict_subjs_pairs_similarities)
+        # sys.exit(0)
 
 
 
@@ -415,6 +441,10 @@ def main(args):
         print(f'Flatting array and removing invalid values')
         all_other_dataset_subj_similarities_concat = flat_array_remove_invalid_values(all_other_dataset_subj_similarities_concat, invalid_value=-1)
         print(f'all_other_dataset_subj_similarities_concat.shape: {all_other_dataset_subj_similarities_concat.shape}\n')
+        dict_other_dataset_subjs_pairs_similarities = get_dict_subject_pairs_by_similarity(all_other_dataset_subj_similarities_list, sims_ranges, other_dataset_subjs_labels_str, other_dataset_subjs_labels_str)
+        path_other_dataset_dict_subjs_pairs_similarities = os.path.join(output_path, f'other_dataset_pairs_by_similarities.json')
+        print(f'Saving other dataset pairs by similarities: \'{path_other_dataset_dict_subjs_pairs_similarities}\'')
+        save_json(dict_other_dataset_subjs_pairs_similarities, path_other_dataset_dict_subjs_pairs_similarities)
 
 
 
@@ -429,7 +459,10 @@ def main(args):
         print(f'Flatting array and removing invalid values')
         all_merged_datasets_outer_similarities_concat = flat_array_remove_invalid_values(all_merged_datasets_outer_similarities_concat, invalid_value=-1)
         print(f'all_merged_datasets_outer_similarities_concat.shape: {all_merged_datasets_outer_similarities_concat.shape}\n')
-
+        dict_merged_datasets_subjs_pairs_similarities = get_dict_subject_pairs_by_similarity(all_merged_datasets_outer_similarities_list, sims_ranges, subjects_labels_str, other_dataset_subjs_labels_str)
+        path_merged_datasets_dict_subjs_pairs_similarities = os.path.join(output_path, f'merged_datasets_pairs_by_similarities.json')
+        print(f'Saving merged datasets pairs by similarities: \'{path_merged_datasets_dict_subjs_pairs_similarities}\'')
+        save_json(dict_merged_datasets_subjs_pairs_similarities, path_merged_datasets_dict_subjs_pairs_similarities)
 
 
 
@@ -443,6 +476,13 @@ def main(args):
 
 
         precomputed_data = {}
+        precomputed_data['subjects_paths']                                        = subjects_paths
+        precomputed_data['other_dataset_subjs_paths']                             = other_dataset_subjs_paths
+        
+        precomputed_data['all_subj_similarities_list']                            = all_subj_similarities_list
+        precomputed_data['all_other_dataset_subj_similarities_list']              = all_other_dataset_subj_similarities_list
+        precomputed_data['all_merged_datasets_outer_similarities_list']           = all_merged_datasets_outer_similarities_list
+        
         precomputed_data['metrics_base_dataset_inner_interclass_similarities']    = metrics_base_dataset_inner_interclass_similarities
         precomputed_data['metrics_other_dataset_inner_interclass_similarities']   = metrics_other_dataset_inner_interclass_similarities
         precomputed_data['metrics_merged_datasets_outer_interclass_similarities'] = metrics_merged_datasets_outer_interclass_similarities
@@ -457,6 +497,13 @@ def main(args):
     else:
         print(f'\nLoading precomputed data: \'{path_precomputed_data}\'')
         precomputed_data = load_dict(path_precomputed_data)
+        subjects_paths                                        = precomputed_data['subjects_paths']
+        other_dataset_subjs_paths                             = precomputed_data['other_dataset_subjs_paths']
+        
+        all_subj_similarities_list                            = precomputed_data['all_subj_similarities_list']
+        all_other_dataset_subj_similarities_list              = precomputed_data['all_other_dataset_subj_similarities_list']
+        all_merged_datasets_outer_similarities_list           = precomputed_data['all_merged_datasets_outer_similarities_list']
+                
         metrics_base_dataset_inner_interclass_similarities    = precomputed_data['metrics_base_dataset_inner_interclass_similarities']
         metrics_other_dataset_inner_interclass_similarities   = precomputed_data['metrics_other_dataset_inner_interclass_similarities']
         metrics_merged_datasets_outer_interclass_similarities = precomputed_data['metrics_merged_datasets_outer_interclass_similarities']
