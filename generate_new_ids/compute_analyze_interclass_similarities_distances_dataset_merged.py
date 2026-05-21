@@ -224,10 +224,45 @@ def compute_histogram(metrics, nbins=20, lower=0.0, higher=1.0):
     return hist_computed_data
 
 
+'''
 def save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, filename, title, color='blue'):
     plt.cla()
     plt.bar(bins_edges[:-1], pmf, width=bins_widths, align="edge", color=color, edgecolor='black', alpha=0.7, label='All similarities')
     
+    # Add title, labels, and legend
+    plt.title(title)
+    plt.xlabel('Similarity')
+    plt.ylabel('Frequency')
+    plt.legend()
+
+    plt.xlim([0, 1])
+    # plt.ylim([0, 0.5])
+    plt.ylim([0, 1.0])
+
+    # Save the plot as PNG
+    plt.savefig(filename)
+
+    f_name, f_extension = os.path.splitext(filename)
+    filename_svg = f_name + '.svg'
+    plt.savefig(filename_svg)
+'''
+
+def save_bar_plot_from_histogram(bins_edges, pmf, bins_widths, total_counts, filename, title, color='blue'):
+    plt.cla()
+    plt.bar(bins_edges[:-1], pmf, width=bins_widths, align="edge", color=color, edgecolor='black', alpha=0.7, label='All similarities')
+    
+    # Add numbers on top of the bars
+    # We calculate the center of each bar by adding half the width to the starting edge
+    for edge, height, width, count in zip(bins_edges[:-1], pmf, bins_widths, total_counts):
+        if height > 0: # Optional: skips labeling empty bins to avoid clutter
+            bar_center = edge + (width / 2)
+            # Adjust the vertical offset (height + 0.02) depending on your data scale
+            plt.text(bar_center, height + 0.02, f'{count}', 
+                     rotation=90, 
+                     fontsize=8, 
+                     ha='center', 
+                     va='bottom')
+
     # Add title, labels, and legend
     plt.title(title)
     plt.xlabel('Similarity')
@@ -448,6 +483,7 @@ def main(args):
     save_bar_plot_from_histogram(hist_base_dataset_inner_interclass_similarities['bins_edges'],
                                  hist_base_dataset_inner_interclass_similarities['pmf'],
                                  hist_base_dataset_inner_interclass_similarities['bins_widths'],
+                                 hist_base_dataset_inner_interclass_similarities['total_counts'],
                                  chart_file_path, title, color='blue')
 
     title = f"Other dataset - {len(other_dataset_subjs_paths)} subjects - {args.metric}"
@@ -457,6 +493,7 @@ def main(args):
     save_bar_plot_from_histogram(hist_other_dataset_inner_interclass_similarities['bins_edges'],
                                  hist_other_dataset_inner_interclass_similarities['pmf'],
                                  hist_other_dataset_inner_interclass_similarities['bins_widths'],
+                                 hist_other_dataset_inner_interclass_similarities['total_counts'],
                                  chart_file_path, title, color='orange')
 
     title = f"Merged datasets - {len(subjects_paths)} base subjects - {len(other_dataset_subjs_paths)} other subjects - {args.metric}"
@@ -466,6 +503,7 @@ def main(args):
     save_bar_plot_from_histogram(hist_merged_datasets_outer_interclass_similarities['bins_edges'],
                                  hist_merged_datasets_outer_interclass_similarities['pmf'],
                                  hist_merged_datasets_outer_interclass_similarities['bins_widths'],
+                                 hist_merged_datasets_outer_interclass_similarities['total_counts'],
                                  chart_file_path, title, color='green')
 
     print('\nFinished!')
