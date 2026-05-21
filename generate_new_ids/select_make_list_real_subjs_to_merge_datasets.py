@@ -191,6 +191,76 @@ def load_select_new_subjs_embedds(base_subj_embedds, new_subj_embedds_paths, sim
     return global_indices_selected_embedds, global_cossims_selected_embedds
 
 
+def load_select_new_subjs_embedds_exclusive(base_subj_embedds, new_subj_embedds_paths, similarity_range):
+    # base_subj_embedds = base_subj_embedds / np.linalg.norm(base_subj_embedds, axis=1, keepdims=True)
+    base_subj_embedds = normalize(base_subj_embedds, axis=1)
+
+    one_embedding = load_one_embedding(new_subj_embedds_paths[0])
+    num_dims = one_embedding.shape[1] if len(one_embedding.shape) == 2 else one_embedding.shape[0]   # typically (1, 512)
+
+    global_indices_selected_embedds = np.empty((0, 2), dtype=int)
+    global_cossims_selected_embedds = np.empty((0, 1), dtype=float)
+    
+    # chunk_size = 1000
+    # chunk_size = 5000
+    chunk_size = 10000
+
+    chunk_all_indices = make_indices_chunks(len(new_subj_embedds_paths), chunk_size)
+
+    global_idx_embedd_path = 0
+    for idx_chunk, chunk_idx in enumerate(chunk_all_indices):
+        # one_embedding = load_one_embedding(new_subj_embedds_paths[0])
+        # num_dims = one_embedding.shape[1] if len(one_embedding.shape) == 2 else one_embedding.shape[0]   # typically (1, 512)
+        shape_chunk_embedd = (chunk_idx[1]-chunk_idx[0], num_dims)
+        chunk_embeddings = np.zeros(shape_chunk_embedd, dtype=one_embedding.dtype)
+
+        for idx_embedd_path, embedd_path in enumerate(new_subj_embedds_paths[chunk_idx[0]:chunk_idx[1]]):
+            print(f"    chunk {idx_chunk}/{len(chunk_all_indices)} - chunk_idx: {chunk_idx} - chunk_embeddings.shape: {chunk_embeddings.shape} - global_idx_embedd: {global_idx_embedd_path}/{len(new_subj_embedds_paths)}", end='\r')
+            # print(f"        chunk_embeddings.shape: {chunk_embeddings.shape} - global_idx_embedd: {global_idx_embedd_path}/{len(new_subj_embedds_paths)}", end='\r')
+            one_embedd = load_one_embedding(embedd_path)
+            chunk_embeddings[idx_embedd_path,:] = one_embedd
+
+            global_idx_embedd_path += 1
+        print()
+
+        # chunk_embeddings = chunk_embeddings / np.linalg.norm(chunk_embeddings, axis=1, keepdims=True)
+        chunk_embeddings = normalize(chunk_embeddings, axis=1)
+        chunk_cossims = np.dot(chunk_embeddings, base_subj_embedds.T)
+        # print('chunk_cossims:', chunk_cossims)
+        # print('        chunk_cossims.shape:', chunk_cossims.shape)   # chunk_cossims.shape: (10000, 10572)
+
+        # --- MODIFIED LOGIC HERE ---
+        # 1. Find the highest overall similarity each new subject has to ANY base subject
+        max_cossims_per_new_subj = np.max(chunk_cossims, axis=1, keepdims=True)
+        
+        # 2. Build the mask: 
+        #    - Individual pairs must fall within the range
+        #    - BUT the new subject's global maximum similarity cannot exceed your upper limit
+        mask = (chunk_cossims >= similarity_range[0]) & (chunk_cossims <= similarity_range[1]) & (max_cossims_per_new_subj <= similarity_range[1])
+        
+        chunk_local_indices = np.argwhere(mask)
+        
+        # Optimized out the explicit for loop using advanced numpy indexing
+        chunk_cossims_selected_embedds = chunk_cossims[chunk_local_indices[:, 0], chunk_local_indices[:, 1]].reshape(-1, 1)
+        # ---------------------------
+
+        # print('        chunk_local_indices:', chunk_local_indices)
+        # print('        chunk_local_indices.shape:', chunk_local_indices.shape)
+
+        chunk_global_indices = copy.deepcopy(chunk_local_indices)
+        chunk_global_indices[:,0] += (idx_chunk * chunk_size)
+        # print('        chunk_global_indices:', chunk_global_indices)
+        print('        chunk_global_indices.shape:', chunk_global_indices.shape)
+        # print('        chunk_global_indices.dtype:', chunk_global_indices.dtype)
+
+        global_indices_selected_embedds = np.vstack((global_indices_selected_embedds, chunk_global_indices))
+        global_cossims_selected_embedds = np.vstack((global_cossims_selected_embedds, chunk_cossims_selected_embedds))
+        print('        global_indices_selected_embedds.shape:', global_indices_selected_embedds.shape)
+        # print('        global_indices_selected_embedds.dtype:', global_indices_selected_embedds.dtype)
+
+    return global_indices_selected_embedds, global_cossims_selected_embedds
+
+
 def make_dict_new_subjs_base_subjs(new_subj_embedds_paths, base_subj_embedds_paths, indices_2d_selected_new_subjs, cossims_selected_new_subjs):
     dict_paths_new_subjs_base_subjs = {}
     for i, indices_2d in enumerate(indices_2d_selected_new_subjs):
@@ -281,7 +351,7 @@ def main(args):
     assert os.path.exists(args.path_new_subjs_embedds), f'Error: no such path or file \'{args.path_new_subjs_embedds}\''
 
 
-    output_folder_name = f"merge_with_dataset_{'-'.join(args.path_new_subjs_embedds.split('/')[-3:])}_sim-range={args.similarity_range}".replace(' ','')
+    output_folder_name = f"merge_with_dataset_{'-'.join(args.path_new_subjs_embedds.split('/')[-3:])}_sim-range={args.similarity_range}_EXCLUSIVE".replace(' ','')
     path_output_folder = os.path.join(os.path.dirname(args.path_base_subj_embedds), output_folder_name)
     print(f"path_output_folder: \'{path_output_folder}\'")
     os.makedirs(path_output_folder, exist_ok=True)
@@ -310,7 +380,8 @@ def main(args):
         print('\nLoading new subjects embeddings...')
         print(f"    {args.path_new_subjs_embedds}")
         new_subj_embedds_paths        = find_files_paths(args.path_new_subjs_embedds, exts=['.npy'], substring_file=args.substring_file_new_subj)
-        indices_2d_selected_new_subjs, cossims_selected_new_subjs = load_select_new_subjs_embedds(base_subj_embedds, new_subj_embedds_paths, args.similarity_range)
+        # indices_2d_selected_new_subjs, cossims_selected_new_subjs = load_select_new_subjs_embedds(base_subj_embedds, new_subj_embedds_paths, args.similarity_range)
+        indices_2d_selected_new_subjs, cossims_selected_new_subjs = load_select_new_subjs_embedds_exclusive(base_subj_embedds, new_subj_embedds_paths, args.similarity_range)
     
         dict_new_subj_data = {'new_subj_embedds_paths':        new_subj_embedds_paths,
                               'indices_2d_selected_new_subjs': indices_2d_selected_new_subjs,
