@@ -24,6 +24,8 @@ def parse_args():
     # parser.add_argument("--similarity_range", type=lambda s: [float(x) for x in s.strip('[]').split(',')], default='[0.0,0.3]')   # low similarity
     parser.add_argument("--similarity_range", type=lambda s: [float(x) for x in s.strip('[]').split(',')], default='[0.7,1.0]')     # high similarity
 
+    parser.add_argument("--save_figs", action='store_true')
+
     args = parser.parse_args()
 
     return args
@@ -315,8 +317,8 @@ def plot_two_sets_images(images_person1, images_person2, similarity, save_path='
 def make_save_figures_selected_and_existing_identities(dict_paths_new_subjs_base_subjs, path_output_figures_ids_folder, split_str='_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace/'):
     img_exts = ['.jpg','.jpeg','.png']
     for idx_key_new_subj, (key_new_subj, base_subj_list_of_list) in enumerate(dict_paths_new_subjs_base_subjs.items()):
-        path_dir_new_subj  = os.path.join(key_new_subj.split(split_str)[0], key_new_subj.split('/')[-2])
-        # print(f"{idx_key_new_subj}/{len(dict_paths_new_subjs_base_subjs)} - {path_dir_new_subj}")
+        path_dir_new_subj = os.path.join(key_new_subj.split(split_str)[0], key_new_subj.split('/')[-2])
+        print(f"{idx_key_new_subj}/{len(dict_paths_new_subjs_base_subjs)} - {key_new_subj} - {path_dir_new_subj}")
         paths_imgs_new_subj = find_files_paths(path_dir_new_subj, exts=img_exts, substring_file='', verbose=False)
         assert len(paths_imgs_new_subj) > 0, f"Error, no files found with exts {img_exts} in path \'{path_dir_new_subj}\'"
         # print('paths_imgs_new_subj:', paths_imgs_new_subj)
@@ -344,6 +346,17 @@ def make_save_figures_selected_and_existing_identities(dict_paths_new_subjs_base
         # print("-----------------")
 
 
+def get_split_string(path_base_subj_embedds='/nobackup1/unico/datasets/face_recognition/CASIA-WebFace/imgs_crops_112x112_FACE_EMBEDDINGS'):
+    path_base_subj_embedds = path_base_subj_embedds.rstrip('/')
+    path_dir_base_subj_embedds = os.path.dirname(path_base_subj_embedds)
+    basename_base_subj_embedds = os.path.basename(path_base_subj_embedds)
+    parts_basename = basename_base_subj_embedds.split('_')
+    for i in range(1, len(parts_basename)):
+        basename_base_subj_imgs = '_'.join(parts_basename[:i])
+        path_dir_base_subj_imgs = os.path.join(path_dir_base_subj_embedds, basename_base_subj_imgs)
+        if os.path.isdir(path_dir_base_subj_imgs):
+            return '_' + '_'.join(parts_basename[i:]) + '/'
+    return None
 
 
 def main(args):
@@ -415,11 +428,15 @@ def main(args):
     # print('\nlen(selected_new_subj_embedds_paths):', len(selected_new_subj_embedds_paths))
 
 
-    output_figures_ids_folder_name = "figures_ids"
-    path_output_figures_ids_folder = os.path.join(path_output_folder, output_figures_ids_folder_name)
-    print(f"\nSaving faces figures - path_output_figures_ids_folder: \'{path_output_figures_ids_folder}\'")
-    os.makedirs(path_output_figures_ids_folder, exist_ok=True)
-    make_save_figures_selected_and_existing_identities(dict_paths_new_subjs_base_subjs, path_output_figures_ids_folder, split_str='_FACE_EMBEDDINGS_R100_WebFace42M_ArcFace/')
+    if args.save_figs:
+        output_figures_ids_folder_name = "figures_ids"
+        path_output_figures_ids_folder = os.path.join(path_output_folder, output_figures_ids_folder_name)
+        print(f"\nSaving faces figures - path_output_figures_ids_folder: \'{path_output_figures_ids_folder}\'")
+        os.makedirs(path_output_figures_ids_folder, exist_ok=True)
+        split_str = get_split_string(args.path_base_subj_embedds)
+        print('split_str:', split_str)
+        assert not split_str is None, f'Error: could not find suitable splitting string from path \'{args.path_base_subj_embedds}\''
+        make_save_figures_selected_and_existing_identities(dict_paths_new_subjs_base_subjs, path_output_figures_ids_folder, split_str)
 
 
     print('\nFinished!\n')
