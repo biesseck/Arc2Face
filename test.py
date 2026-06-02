@@ -3,6 +3,7 @@ from diffusers import (
     StableDiffusionPipeline,
     UNet2DConditionModel,
     DPMSolverMultistepScheduler,
+    LCMScheduler
 )
 
 from arc2face import CLIPTextModelWrapper, project_face_embs
@@ -19,6 +20,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--path-input", type=str, default="assets/examples/joacquin.png")
 parser.add_argument("--num-samples", type=int, default=4)
+parser.add_argument("--lcm-lora", action='store_true')
 args = parser.parse_args()
 
 assert os.path.isfile(args.path_input), f"Error: file not found \'{args.path_input}\'"
@@ -50,6 +52,11 @@ pipeline = StableDiffusionPipeline.from_pretrained(
 # By default, we use DPMSolverMultistepScheduler with 25 steps, which produces very good
 # results in just a few seconds.
 pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
+
+if args.lcm_lora:
+    pipeline.load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
+    pipeline.scheduler = LCMScheduler.from_config(pipeline.scheduler.config)
+
 pipeline = pipeline.to('cuda')
 
 
@@ -72,7 +79,10 @@ else:
 
     # Generate images:
     print(f'Generating {args.num_samples} new samples...')
-    images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples).images
+    if args.lcm_lora:
+        images = pipeline(prompt_embeds=id_emb, num_inference_steps=2, guidance_scale=1.0, num_images_per_prompt=args.num_samples).images
+    else:
+        images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples).images
     # print('images:', images)
     output_folder = f"{os.path.splitext(args.path_input)[0]}_newSamples"
     os.makedirs(output_folder, exist_ok=True)
