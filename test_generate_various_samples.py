@@ -3,6 +3,7 @@ from diffusers import (
     StableDiffusionPipeline,
     UNet2DConditionModel,
     DPMSolverMultistepScheduler,
+    LCMScheduler
 )
 
 from arc2face import CLIPTextModelWrapper, project_face_embs
@@ -25,6 +26,7 @@ parser.add_argument("--path-dataset", type=str, default="/nobackup3/bjgbiesseck/
 parser.add_argument("--num-samples",  type=int, default=5)
 parser.add_argument("--idx-start",    type=int, default=0)
 parser.add_argument("--path-output",  type=str, default="")
+parser.add_argument("--lcm-lora",     action='store_true')
 
 args = parser.parse_args()
 assert os.path.isdir(args.path_dataset), f"Error: dir not found \'{args.path_dataset}\'"
@@ -40,6 +42,7 @@ def natural_sort(l):
 
 
 def get_all_files_in_path(folder_path, file_extension=['.jpg','.jpeg','.png', '.npy', '.pt'], pattern=''):
+    num_files_found = 0
     file_list = []
     for root, _, files in os.walk(folder_path):
         for filename in files:
@@ -47,8 +50,10 @@ def get_all_files_in_path(folder_path, file_extension=['.jpg','.jpeg','.png', '.
             for ext in file_extension:
                 if pattern in path_file and path_file.lower().endswith(ext.lower()):
                     file_list.append(path_file)
+                    num_files_found += 1
+                    print(f'    Found {num_files_found}', end='\r')
                     # print(f'Found files: {len(file_list)}', end='\r')
-    # print()
+    print()
     file_list = natural_sort(file_list)
     return file_list
 
@@ -123,6 +128,11 @@ pipeline = StableDiffusionPipeline.from_pretrained(
 # By default, we use DPMSolverMultistepScheduler with 25 steps, which produces very good
 # results in just a few seconds.
 pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
+
+if args.lcm_lora:
+    pipeline.load_lora_weights("latent-consistency/lcm-lora-sdv1-5")
+    pipeline.scheduler = LCMScheduler.from_config(pipeline.scheduler.config)
+
 pipeline = pipeline.to('cuda')
 
 
@@ -142,6 +152,7 @@ else:
 # os.makedirs(args.path_output, exist_ok=True)
 
 
+print(f'Searching all files in path \'{args.path_dataset}\'')
 all_imgs_paths = get_all_files_in_path(args.path_dataset)
 # print('len(all_imgs_paths):', len(all_imgs_paths))
 # sys.exit(0)
@@ -177,7 +188,10 @@ for idx_img, path_img in enumerate(all_imgs_paths):
 
         # Generate images:
         print(f'    Generating {args.num_samples} new samples...')
-        images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples).images
+        if args.lcm_lora:
+            images = pipeline(prompt_embeds=id_emb, num_inference_steps=2, guidance_scale=1.0, num_images_per_prompt=args.num_samples).images
+        else:
+            images = pipeline(prompt_embeds=id_emb, num_inference_steps=25, guidance_scale=3.0, num_images_per_prompt=args.num_samples).images
         # print('images:', images)
         # output_folder = args.path_output
         output_sub_folder = os.path.join(args.path_output, os.path.splitext(os.path.basename(path_img))[0])
